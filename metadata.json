@@ -1,0 +1,6 @@
+{
+  "name": "Linux DB Stack",
+  "description": "Developer Code Playground & Linux userland stack with Node.js, Python, MariaDB, Redis, MongoDB, and Live Web Preview",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
