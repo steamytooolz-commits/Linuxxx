@@ -3,6 +3,8 @@ package com.example.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -64,6 +66,13 @@ fun TerminalConsole(
     onToggleAutoScroll: (Boolean) -> Unit,
     onClearLogs: () -> Unit,
     onExecuteCommand: (String) -> Unit = {},
+    isInteractiveSessionActive: Boolean = false,
+    activeSessionTitle: String = "none",
+    activeSessionPid: Long = -1L,
+    onStartInteractiveShell: (command: String) -> Unit = {},
+    onSendInteractiveInput: (String) -> Unit = {},
+    onSendControlSignal: (String) -> Unit = {},
+    onKillInteractiveSession: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
@@ -91,15 +100,15 @@ fun TerminalConsole(
     )
 
     val keyBarItems = listOf(
-        "↑", "↓", "CTRL", "ALT", "TAB", "ESC", "|", "/", "-", "~", "grep", "CLEAR"
+        "↑", "↓", "CTRL+C", "CTRL+D", "TAB", "ESC", "|", "/", "-", "~", "grep", "CLEAR"
     )
 
     // Filtered log list depending on selected tab
     val filteredLogs = remember(logs, selectedTab) {
         when (selectedTab) {
-            "mariadb" -> logs.filter { it.tag in listOf("MYSQL", "CLI", "OUT", "ERROR") && (it.message.contains("mysql", ignoreCase = true) || it.message.contains("mariadb", ignoreCase = true) || it.tag == "MYSQL") }
-            "redis" -> logs.filter { it.tag in listOf("REDIS", "CLI", "OUT", "ERROR") && (it.message.contains("redis", ignoreCase = true) || it.tag == "REDIS") }
-            "mongo" -> logs.filter { it.tag in listOf("MONGO", "CLI", "OUT", "ERROR") && (it.message.contains("mongo", ignoreCase = true) || it.tag == "MONGO") }
+            "mariadb" -> logs.filter { it.tag in listOf("MYSQL", "CLI", "OUT", "ERROR", "SHELL") && (it.message.contains("mysql", ignoreCase = true) || it.message.contains("mariadb", ignoreCase = true) || it.tag == "MYSQL") }
+            "redis" -> logs.filter { it.tag in listOf("REDIS", "CLI", "OUT", "ERROR", "SHELL") && (it.message.contains("redis", ignoreCase = true) || it.tag == "REDIS") }
+            "mongo" -> logs.filter { it.tag in listOf("MONGO", "CLI", "OUT", "ERROR", "SHELL") && (it.message.contains("mongo", ignoreCase = true) || it.tag == "MONGO") }
             "errors" -> logs.filter { it.isError || it.tag.contains("ERR") }
             else -> logs
         }
@@ -119,7 +128,11 @@ fun TerminalConsole(
             commandHistory.add(trimmed)
         }
         historyIndex = -1
-        onExecuteCommand(trimmed)
+        if (isInteractiveSessionActive) {
+            onSendInteractiveInput(trimmed)
+        } else {
+            onExecuteCommand(trimmed)
+        }
         commandInput = ""
     }
 
@@ -252,6 +265,107 @@ fun TerminalConsole(
                     }
                 }
             }
+
+            // Interactive Stream Session Status & Quick Launch Bar
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF030712))
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                if (isInteractiveSessionActive) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF10B981))
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "LIVE STREAM: ${activeSessionTitle.uppercase()} ${if (activeSessionPid > 0) "[PID $activeSessionPid]" else ""}",
+                            color = Color(0xFF34D399),
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 10.sp
+                        )
+                    }
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(Color(0xFF0284C7))
+                                .clickable { onSendControlSignal("CTRL_C") }
+                                .padding(horizontal = 6.dp, vertical = 3.dp)
+                        ) {
+                            Text("^C", color = Color.White, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(Color(0xFF0284C7))
+                                .clickable { onSendControlSignal("CTRL_D") }
+                                .padding(horizontal = 6.dp, vertical = 3.dp)
+                        ) {
+                            Text("^D", color = Color.White, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(Color(0xFFDC2626))
+                                .clickable { onKillInteractiveSession() }
+                                .padding(horizontal = 6.dp, vertical = 3.dp)
+                        ) {
+                            Text("STOP", color = Color.White, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                        }
+                    }
+                } else {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = "SPAWN STREAM:",
+                            color = Color(0xFF38BDF8),
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 10.sp
+                        )
+
+                        val sessionLaunchers = listOf(
+                            "bash" to "",
+                            "python3" to "python3 -i",
+                            "node" to "node",
+                            "mariadb" to "mysql -u root",
+                            "redis" to "redis-cli"
+                        )
+
+                        sessionLaunchers.forEach { (label, cmd) ->
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(Color(0xFF1E293B))
+                                    .clickable { onStartInteractiveShell(cmd) }
+                                    .padding(horizontal = 6.dp, vertical = 3.dp)
+                            ) {
+                                Text(
+                                    text = "▶ $label",
+                                    color = Color(0xFF38BDF8),
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 10.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         // Terminal Log Viewport
@@ -319,7 +433,15 @@ fun TerminalConsole(
                             .clickable {
                                 when (key) {
                                     "CLEAR" -> onClearLogs()
-                                    "TAB" -> commandInput += "  "
+                                    "CTRL+C" -> onSendControlSignal("CTRL_C")
+                                    "CTRL+D" -> onSendControlSignal("CTRL_D")
+                                    "TAB" -> {
+                                        if (isInteractiveSessionActive) {
+                                            onSendControlSignal("TAB")
+                                        } else {
+                                            commandInput += "  "
+                                        }
+                                    }
                                     "↑" -> {
                                         if (commandHistory.isNotEmpty()) {
                                             val newIdx = if (historyIndex == -1) commandHistory.size - 1 else (historyIndex - 1).coerceAtLeast(0)

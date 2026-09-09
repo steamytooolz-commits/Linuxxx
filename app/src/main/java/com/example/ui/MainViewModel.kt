@@ -103,7 +103,11 @@ server.listen(PORT, '127.0.0.1', () => {
     val wiredTigerCacheSizeMb: Int = 256,
     val innodbBufferPoolMb: Int = 128,
     val maxLogBufferSize: Int = 300,
-    val probeIntervalSec: Int = 5
+    val probeIntervalSec: Int = 5,
+    // Interactive Terminal Shell Stream State
+    val isInteractiveSessionActive: Boolean = false,
+    val activeSessionTitle: String = "none",
+    val activeSessionPid: Long = -1L
 )
 
 class MainViewModel(
@@ -123,6 +127,9 @@ class MainViewModel(
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
 
     private var portPollingJob: Job? = null
+    private var interactiveProcess: Process? = null
+    private var interactiveWriter: java.io.BufferedWriter? = null
+    private var interactiveReaderJob: Job? = null
 
     init {
         // Collect service running state from Foreground Service
@@ -580,6 +587,159 @@ class MainViewModel(
                 appendLog("CLI-ERR", "Execution failed: ${e.message}", isError = true)
             }
         }
+    }
+
+    fun startInteractiveShell(command: String = "") {
+        killInteractiveSession()
+        
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val env = linuxEnvManager.getLinuxEnvironment()
+                val shellBinary = if (File(linuxEnvManager.BINDIR, "bash").exists() && File(linuxEnvManager.BINDIR, "bash").canExecute()) {
+                    File(linuxEnvManager.BINDIR, "bash").absolutePath
+                } else {
+                    "/system/bin/sh"
+                }
+
+                val cmdList = if (command.isBlank()) {
+                    listOf(shellBinary, "-i")
+                } else {
+                    listOf(shellBinary, "-c", command)
+                }
+
+                val pb = ProcessBuilder(cmdList)
+                pb.directory(File(linuxEnvManager.HOME))
+                pb.environment().putAll(env)
+                pb.redirectErrorStream(true)
+
+                val process = pb.start()
+                interactiveProcess = process
+                interactiveWriter = process.outputStream.bufferedWriter(Charsets.UTF_8)
+
+                val pid = try {
+                    val field = process.javaClass.getDeclaredField("pid")
+                    field.isAccessible = true
+                    field.getLong(process)
+                } catch (_: Throwable) {
+                    -1L
+                }
+
+                val title = if (command.isBlank()) "bash" else command.split(" ").firstOrNull() ?: "shell"
+                _uiState.update {
+                    it.copy(
+                        isInteractiveSessionActive = true,
+                        activeSessionTitle = title,
+                        activeSessionPid = pid
+                    )
+                }
+                appendLog("SHELL", "⚡ Started interactive Linux stream session [$title]")
+
+                interactiveReaderJob = viewModelScope.launch(Dispatchers.IO) {
+                    try {
+                        val reader = process.inputStream.bufferedReader(Charsets.UTF_8)
+                        var line: String? = reader.readLine()
+                        while (line != null) {
+                            appendLog("OUT", line)
+                            line = reader.readLine()
+                        }
+                    } catch (e: Exception) {
+                        if (interactiveProcess != null) {
+                            appendLog("SHELL-ERR", "Stream error: ${e.message}", isError = true)
+                        }
+                    } finally {
+                        val exitCode = try { process.waitFor() } catch (_: Throwable) { -1 }
+                        _uiState.update {
+                            it.copy(
+                                isInteractiveSessionActive = false,
+                                activeSessionTitle = "none",
+                                activeSessionPid = -1L
+                            )
+                        }
+                        appendLog("SHELL", "Interactive session ended [exit $exitCode]")
+                    }
+                }
+            } catch (e: Exception) {
+                appendLog("SHELL-ERR", "Failed to start interactive shell: ${e.message}", isError = true)
+                _uiState.update {
+                    it.copy(
+                        isInteractiveSessionActive = false,
+                        activeSessionTitle = "none",
+                        activeSessionPid = -1L
+                    )
+                }
+            }
+        }
+    }
+
+    fun sendInteractiveInput(input: String) {
+        val trimmed = input.trim()
+        if (trimmed.isEmpty()) return
+        
+        viewModelScope.launch(Dispatchers.IO) {
+            val writer = interactiveWriter
+            val proc = interactiveProcess
+            if (proc != null && proc.isAlive && writer != null) {
+                try {
+                    appendLog("IN", "$ $trimmed")
+                    writer.write(trimmed + "\n")
+                    writer.flush()
+                } catch (e: Exception) {
+                    appendLog("SHELL-ERR", "Failed writing to process stdin: ${e.message}", isError = true)
+                }
+            } else {
+                executeCommand(trimmed)
+            }
+        }
+    }
+
+    fun sendControlSignal(signal: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val writer = interactiveWriter
+            val proc = interactiveProcess
+            if (proc != null && proc.isAlive && writer != null) {
+                try {
+                    when (signal.uppercase()) {
+                        "CTRL_C", "SIGINT" -> {
+                            appendLog("SHELL", "^C (SIGINT)")
+                            writer.write("\u0003")
+                            writer.flush()
+                        }
+                        "CTRL_D", "EOF" -> {
+                            appendLog("SHELL", "^D (EOF)")
+                            writer.write("\u0004")
+                            writer.flush()
+                        }
+                        "TAB" -> {
+                            writer.write("\t")
+                            writer.flush()
+                        }
+                    }
+                } catch (e: Exception) {
+                    appendLog("SHELL-ERR", "Failed sending signal $signal: ${e.message}", isError = true)
+                }
+            } else {
+                appendLog("SHELL", "No active interactive process to receive $signal")
+            }
+        }
+    }
+
+    fun killInteractiveSession() {
+        try {
+            interactiveReaderJob?.cancel()
+            interactiveReaderJob = null
+            interactiveProcess?.destroyForcibly()
+            interactiveProcess = null
+            interactiveWriter?.close()
+            interactiveWriter = null
+            _uiState.update {
+                it.copy(
+                    isInteractiveSessionActive = false,
+                    activeSessionTitle = "none",
+                    activeSessionPid = -1L
+                )
+            }
+            appendLog("SHELL", "Interactive shell session terminated.")
+        } catch (_: Exception) {}
     }
 
     private fun appendLog(tag: String, message: String, isError: Boolean = false) {
