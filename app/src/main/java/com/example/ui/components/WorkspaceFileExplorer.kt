@@ -261,7 +261,8 @@ fun WorkspaceFileExplorer(
                 .background(Color(0xFF0D1322))
                 .horizontalScroll(rememberScrollState())
                 .padding(horizontal = 10.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             val bookmarks = listOf(
                 "ROOTFS" to rootDirPath,
@@ -290,6 +291,58 @@ fun WorkspaceFileExplorer(
                     Text(
                         text = label,
                         color = if (isCurrent) Color.White else Color(0xFF94A3B8),
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 10.sp
+                    )
+                }
+            }
+        }
+
+        // Quick Database Config Shortcuts
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFF0F172A))
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "CONFIG EDIT:",
+                color = Color(0xFF38BDF8),
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                fontSize = 10.sp
+            )
+
+            val configFiles = listOf(
+                "MariaDB (my.cnf)" to File("$rootDirPath/etc/my.cnf"),
+                "Redis (redis.conf)" to File("$rootDirPath/etc/redis.conf"),
+                "MongoDB (mongod.conf)" to File("$rootDirPath/etc/mongod.conf")
+            )
+
+            configFiles.forEach { (label, file) ->
+                val isOpen = activeTab == file
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(if (isOpen) Color(0xFF059669) else Color(0xFF1E293B))
+                        .clickable {
+                            if (!file.exists()) {
+                                try {
+                                    file.parentFile?.mkdirs()
+                                    file.createNewFile()
+                                } catch (_: Exception) {}
+                            }
+                            openFileInTab(file)
+                        }
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = label,
+                        color = if (isOpen) Color.White else Color(0xFF38BDF8),
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold,
                         fontSize = 10.sp

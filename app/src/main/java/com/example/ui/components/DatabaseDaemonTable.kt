@@ -61,7 +61,7 @@ fun DatabaseDaemonTable(
             name = "MariaDB (MySQL)",
             binary = "mysqld_safe",
             port = 3306,
-            defaultPath = "home/mysql_data",
+            defaultPath = "\$MYSQL_DATA_DIR",
             status = if (ports[3306]?.isOpen == true) "ONLINE" else if (isServiceRunning) "STARTING" else "STOPPED",
             latency = ports[3306]?.let { if (it.isOpen && it.latencyMs >= 0) "${it.latencyMs}ms" else "-" } ?: "-",
             isRunning = ports[3306]?.isOpen == true
@@ -70,7 +70,7 @@ fun DatabaseDaemonTable(
             name = "Redis In-Memory",
             binary = "redis-server",
             port = 6379,
-            defaultPath = "home/redis_data",
+            defaultPath = "\$REDIS_DATA_DIR",
             status = if (ports[6379]?.isOpen == true) "ONLINE" else if (isServiceRunning) "STARTING" else "STOPPED",
             latency = ports[6379]?.let { if (it.isOpen && it.latencyMs >= 0) "${it.latencyMs}ms" else "-" } ?: "-",
             isRunning = ports[6379]?.isOpen == true
@@ -79,7 +79,7 @@ fun DatabaseDaemonTable(
             name = "MongoDB NoSQL",
             binary = "mongod",
             port = 27017,
-            defaultPath = "home/mongo_data",
+            defaultPath = "\$MONGO_DATA_DIR",
             status = if (ports[27017]?.isOpen == true) "ONLINE" else if (isServiceRunning) "STARTING" else "STOPPED",
             latency = ports[27017]?.let { if (it.isOpen && it.latencyMs >= 0) "${it.latencyMs}ms" else "-" } ?: "-",
             isRunning = ports[27017]?.isOpen == true

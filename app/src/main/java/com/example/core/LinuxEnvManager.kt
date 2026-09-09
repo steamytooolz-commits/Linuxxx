@@ -38,6 +38,13 @@ class LinuxEnvManager(
     fun getLinuxEnvironment(): HashMap<String, String> {
         val env = HashMap<String, String>()
         
+        // Populate storage paths using the dedicated FileService
+        val storageManager = LinuxStorageManager(context)
+        val storageVars = storageManager.getStorageEnvVars()
+        for ((key, value) in storageVars) {
+            env[key] = value
+        }
+        
         // Populate required system environment keys per Module 3 specifications
         env["PATH"] = "$PREFIX/bin:$PREFIX/bin/applets:/system/bin"
         env["LD_LIBRARY_PATH"] = "$PREFIX/lib"

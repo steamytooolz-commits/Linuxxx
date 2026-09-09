@@ -22,6 +22,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Storage
@@ -43,6 +45,20 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.filled.Save
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.TextStyle
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 import com.example.ui.MainUiState
 import com.example.ui.components.DatabaseDaemonTable
 
@@ -206,22 +222,25 @@ fun DaemonsScreen(
             DaemonControlItem(
                 name = "MariaDB / MySQL",
                 port = 3306,
-                startCmd = "mysqld_safe --datadir=\$HOME/mysql_data --port=3306 --innodb_buffer_pool_size=${uiState.innodbBufferPoolMb}M &",
+                startCmd = "mysqld_safe --datadir=\$MYSQL_DATA_DIR --port=3306 --innodb_buffer_pool_size=${uiState.innodbBufferPoolMb}M &",
                 stopCmd = "pkill mysqld",
+                restartCmd = "pkill mysqld; sleep 1; mysqld_safe --datadir=\$MYSQL_DATA_DIR --port=3306 --innodb_buffer_pool_size=${uiState.innodbBufferPoolMb}M &",
                 checkCmd = "mysqladmin ping -u root"
             ),
             DaemonControlItem(
                 name = "Redis In-Memory",
                 port = 6379,
-                startCmd = "redis-server \$PREFIX/etc/redis.conf &",
+                startCmd = "redis-server \$PREFIX/etc/redis.conf --dir \$REDIS_DATA_DIR &",
                 stopCmd = "redis-cli shutdown || pkill redis-server",
+                restartCmd = "(redis-cli shutdown || pkill redis-server); sleep 1; redis-server \$PREFIX/etc/redis.conf --dir \$REDIS_DATA_DIR &",
                 checkCmd = "redis-cli ping"
             ),
             DaemonControlItem(
                 name = "MongoDB NoSQL",
                 port = 27017,
-                startCmd = "mongod --dbpath \$HOME/mongo_data --port 27017 --wiredTigerCacheSizeGB ${(uiState.wiredTigerCacheSizeMb / 1024f)} &",
+                startCmd = "mongod --dbpath \$MONGO_DATA_DIR --port 27017 --wiredTigerCacheSizeGB ${(uiState.wiredTigerCacheSizeMb / 1024f)} &",
                 stopCmd = "mongod --shutdown || pkill mongod",
+                restartCmd = "(mongod --shutdown || pkill mongod); sleep 1; mongod --dbpath \$MONGO_DATA_DIR --port 27017 --wiredTigerCacheSizeGB ${(uiState.wiredTigerCacheSizeMb / 1024f)} &",
                 checkCmd = "mongosh --eval 'db.runCommand({ping:1})' 2>/dev/null"
             )
         )
@@ -283,7 +302,7 @@ fun DaemonsScreen(
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         OutlinedButton(
                             onClick = { onExecuteCommand(daemon.startCmd) },
@@ -292,6 +311,7 @@ fun DaemonsScreen(
                                 1.dp,
                                 if (isDark) Color(0xFF334155) else Color(0xFFCBD5E1)
                             ),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 0.dp),
                             modifier = Modifier.weight(1f).height(36.dp)
                         ) {
                             Text(
@@ -309,6 +329,7 @@ fun DaemonsScreen(
                                 1.dp,
                                 if (isDark) Color(0xFF334155) else Color(0xFFCBD5E1)
                             ),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 0.dp),
                             modifier = Modifier.weight(1f).height(36.dp)
                         ) {
                             Text(
@@ -320,12 +341,31 @@ fun DaemonsScreen(
                         }
 
                         OutlinedButton(
+                            onClick = { onExecuteCommand(daemon.restartCmd) },
+                            shape = RoundedCornerShape(8.dp),
+                            border = androidx.compose.foundation.BorderStroke(
+                                1.dp,
+                                if (isDark) Color(0xFF334155) else Color(0xFFCBD5E1)
+                            ),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                            modifier = Modifier.weight(1f).height(36.dp)
+                        ) {
+                            Text(
+                                text = "Restart",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (isDark) Color(0xFFFBBF24) else Color(0xFFD97706)
+                            )
+                        }
+
+                        OutlinedButton(
                             onClick = { onExecuteCommand(daemon.checkCmd) },
                             shape = RoundedCornerShape(8.dp),
                             border = androidx.compose.foundation.BorderStroke(
                                 1.dp,
                                 if (isDark) Color(0xFF334155) else Color(0xFFCBD5E1)
                             ),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 0.dp),
                             modifier = Modifier.weight(1f).height(36.dp)
                         ) {
                             Text(
@@ -339,6 +379,192 @@ fun DaemonsScreen(
                 }
             }
         }
+
+        // Live Configuration File Editor Card
+        ConfigurationEditorCard(
+            prefixPath = uiState.prefixPath,
+            isDark = isDark,
+            onExecuteCommand = onExecuteCommand
+        )
+    }
+}
+
+@Composable
+private fun ConfigurationEditorCard(
+    prefixPath: String,
+    isDark: Boolean,
+    onExecuteCommand: (String) -> Unit
+) {
+    val coroutineScope = rememberCoroutineScope()
+    val configMap = remember(prefixPath) {
+        mapOf(
+            "MariaDB (my.cnf)" to File("$prefixPath/etc/my.cnf"),
+            "Redis (redis.conf)" to File("$prefixPath/etc/redis.conf"),
+            "MongoDB (mongod.conf)" to File("$prefixPath/etc/mongod.conf")
+        )
+    }
+
+    var selectedConfigKey by remember { mutableStateOf("MariaDB (my.cnf)") }
+    val currentFile = configMap[selectedConfigKey] ?: File("$prefixPath/etc/my.cnf")
+
+    var contentText by remember(currentFile.absolutePath) { mutableStateOf("") }
+    var statusMsg by remember { mutableStateOf<String?>(null) }
+    var isLoading by remember { mutableStateOf(false) }
+
+    fun loadContent() {
+        isLoading = true
+        coroutineScope.launch(Dispatchers.IO) {
+            if (!currentFile.exists()) {
+                try {
+                    currentFile.parentFile?.mkdirs()
+                    currentFile.createNewFile()
+                } catch (_: Exception) {}
+            }
+            val text = try { currentFile.readText() } catch (e: Exception) { "# Error reading file: ${e.message}" }
+            withContext(Dispatchers.Main) {
+                contentText = text
+                isLoading = false
+            }
+        }
+    }
+
+    LaunchedEffect(currentFile.absolutePath) {
+        loadContent()
+    }
+
+    Card(
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isDark) Color(0xFF0F172A) else Color(0xFFFFFFFF)
+        ),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            if (isDark) Color(0xFF1E293B) else Color(0xFFE2E8F0)
+        ),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Description,
+                        contentDescription = null,
+                        tint = if (isDark) Color(0xFF38BDF8) else Color(0xFF0284C7),
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "CONFIGURATION EDITOR",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = if (isDark) Color(0xFFF1F5F9) else Color(0xFF0F172A)
+                    )
+                }
+
+                Button(
+                    onClick = {
+                        coroutineScope.launch(Dispatchers.IO) {
+                            val success = try {
+                                currentFile.writeText(contentText)
+                                true
+                            } catch (e: Exception) {
+                                false
+                            }
+                            withContext(Dispatchers.Main) {
+                                if (success) {
+                                    statusMsg = "Saved: ${currentFile.name}"
+                                    onExecuteCommand("echo 'Configuration saved to ${currentFile.name}'")
+                                } else {
+                                    statusMsg = "Error saving configuration"
+                                }
+                            }
+                        }
+                    },
+                    shape = RoundedCornerShape(8.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF059669),
+                        contentColor = Color.White
+                    ),
+                    modifier = Modifier.height(32.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Save,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Save Config", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Config Selector Chips
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                configMap.keys.forEach { key ->
+                    val isSelected = selectedConfigKey == key
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (isSelected) Color(0xFF0284C7) else if (isDark) Color(0xFF1E293B) else Color(0xFFE2E8F0))
+                            .clickable {
+                                selectedConfigKey = key
+                                statusMsg = null
+                            }
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                    ) {
+                        Text(
+                            text = key,
+                            color = if (isSelected) Color.White else if (isDark) Color(0xFF94A3B8) else Color(0xFF475569),
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 10.sp
+                        )
+                    }
+                }
+            }
+
+            if (statusMsg != null) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = statusMsg ?: "",
+                    color = Color(0xFF10B981),
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            OutlinedTextField(
+                value = contentText,
+                onValueChange = { contentText = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(180.dp),
+                textStyle = TextStyle(
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    color = if (isDark) Color(0xFFE2E8F0) else Color(0xFF0F172A)
+                ),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = if (isDark) Color(0xFF0B101E) else Color(0xFFF8FAFC),
+                    unfocusedContainerColor = if (isDark) Color(0xFF0B101E) else Color(0xFFF8FAFC),
+                    focusedBorderColor = Color(0xFF0284C7),
+                    unfocusedBorderColor = if (isDark) Color(0xFF1E293B) else Color(0xFFCBD5E1)
+                ),
+                shape = RoundedCornerShape(8.dp)
+            )
+        }
     }
 }
 
@@ -347,5 +573,6 @@ private data class DaemonControlItem(
     val port: Int,
     val startCmd: String,
     val stopCmd: String,
+    val restartCmd: String,
     val checkCmd: String
 )

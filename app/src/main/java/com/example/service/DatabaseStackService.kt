@@ -178,29 +178,39 @@ class DatabaseStackService : Service() {
             export TMPDIR="$prefix/tmp"
             
             echo "[start_all_dbs] Initializing environment..."
-            echo "[start_all_dbs] PREFIX=$prefix"
-            echo "[start_all_dbs] HOME=$home"
             
-            # Module 4 requirement: Check if mysql_data exists, run mysql_install_db
-            if [ ! -d "$home/mysql_data" ]; then
-                echo "[start_all_dbs] Installing MySQL/MariaDB database in $home/mysql_data..."
-                $prefix/bin/mysql_install_db --datadir=$home/mysql_data
+            # Module 4 requirement: Check for existence of required binaries and initialize in sequence
+            
+            # 1. MariaDB Initialization
+            if [ -x "$prefix/bin/mysqld_safe" ]; then
+                if [ ! -d "${'$'}MYSQL_DATA_DIR/mysql" ]; then
+                    echo "[start_all_dbs] Installing MySQL/MariaDB database in ${'$'}MYSQL_DATA_DIR..."
+                    $prefix/bin/mysql_install_db --datadir="${'$'}MYSQL_DATA_DIR"
+                fi
+                echo "[start_all_dbs] Spawning mysqld_safe on port 3306..."
+                $prefix/bin/mysqld_safe --datadir="${'$'}MYSQL_DATA_DIR" --port=3306 &
+                echo $! > "$prefix/tmp/mysqld.pid"
             else
-                echo "[start_all_dbs] Existing MySQL data directory found at $home/mysql_data"
+                echo "[start_all_dbs] mysqld_safe binary not found or not executable. Skipping MariaDB."
             fi
             
-            # Module 4 requirement: Launch MariaDB, Redis, MongoDB
-            echo "[start_all_dbs] Spawning mysqld_safe on port 3306..."
-            $prefix/bin/mysqld_safe --datadir=$home/mysql_data --port=3306 &
-            echo $! > "$prefix/tmp/mysqld.pid"
+            # 2. Redis Initialization
+            if [ -x "$prefix/bin/redis-server" ]; then
+                echo "[start_all_dbs] Spawning redis-server on port 6379..."
+                $prefix/bin/redis-server --dir "${'$'}REDIS_DATA_DIR" --port 6379 --protected-mode no &
+                echo $! > "$prefix/tmp/redis.pid"
+            else
+                echo "[start_all_dbs] redis-server binary not found or not executable. Skipping Redis."
+            fi
             
-            echo "[start_all_dbs] Spawning redis-server on port 6379..."
-            $prefix/bin/redis-server --dir $home/redis_data --port 6379 --protected-mode no &
-            echo $! > "$prefix/tmp/redis.pid"
-            
-            echo "[start_all_dbs] Spawning mongod on port 27017..."
-            $prefix/bin/mongod --dbpath=$home/mongo_data --port 27017 --wiredTigerCacheSizeGB 0.25 &
-            echo $! > "$prefix/tmp/mongod.pid"
+            # 3. MongoDB Initialization
+            if [ -x "$prefix/bin/mongod" ]; then
+                echo "[start_all_dbs] Spawning mongod on port 27017..."
+                $prefix/bin/mongod --dbpath="${'$'}MONGO_DATA_DIR" --port 27017 --wiredTigerCacheSizeGB 0.25 &
+                echo $! > "$prefix/tmp/mongod.pid"
+            else
+                echo "[start_all_dbs] mongod binary not found or not executable. Skipping MongoDB."
+            fi
             
             echo "[start_all_dbs] All database background tasks launched successfully."
             wait
