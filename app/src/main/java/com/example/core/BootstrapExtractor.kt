@@ -102,8 +102,49 @@ class BootstrapExtractor(
             val symlinkRecords = mutableListOf<SymlinkRecord>()
             var extractedCount = 0
 
-            // 2. Open asset input stream
-            val assetStream: InputStream = context.assets.open(ASSET_NAME)
+            // 2. Open input stream (from assets or download)
+            val assetStream: InputStream = try {
+                context.assets.open(ASSET_NAME)
+            } catch (e: Exception) {
+                onProgress(ExtractionProgress(isExtracting = true, currentFile = "Downloading Termux bootstrap via HTTP..."))
+                
+                // Determine architecture dynamically
+                val abi = android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"
+                val arch = when {
+                    abi.contains("x86_64") -> "x86_64"
+                    abi.contains("x86") -> "i686"
+                    abi.contains("armeabi-v7a") -> "arm"
+                    else -> "aarch64"
+                }
+                
+                val url = java.net.URL("https://github.com/termux/termux-packages/releases/latest/download/bootstrap-$arch.zip")
+                val connection = url.openConnection() as java.net.HttpURLConnection
+                connection.instanceFollowRedirects = true
+                connection.connect()
+                
+                var input = connection.inputStream
+                var status = connection.responseCode
+                var currentConn = connection
+                
+                while (status == 301 || status == 302 || status == 303 || status == 307 || status == 308) {
+                    val redirectUrl = currentConn.getHeaderField("Location")
+                    currentConn = java.net.URL(redirectUrl).openConnection() as java.net.HttpURLConnection
+                    currentConn.connect()
+                    status = currentConn.responseCode
+                    input = currentConn.inputStream
+                }
+                
+                // Read fully to file to avoid timeout/stream issues
+                val zipFile = File(context.filesDir, "bootstrap_downloaded.zip")
+                if (!zipFile.exists() || zipFile.length() < 1000000) {
+                    FileOutputStream(zipFile).use { out ->
+                        input.copyTo(out)
+                    }
+                }
+                input.close()
+                java.io.FileInputStream(zipFile)
+            }
+            
             ZipInputStream(assetStream).use { zipIn ->
                 var entry: ZipEntry? = zipIn.nextEntry
                 while (entry != null) {

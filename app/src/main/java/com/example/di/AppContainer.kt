@@ -3,6 +3,7 @@ package com.example.di
 import android.content.Context
 import com.example.core.BootstrapExtractor
 import com.example.core.LinuxEnvManager
+import com.example.core.PRootDistroManager
 import com.example.data.local.AppDatabase
 import com.example.data.repository.DatabaseRepository
 import com.example.data.repository.DatabaseRepositoryImpl
@@ -16,6 +17,7 @@ interface AppContainer {
     val databaseRepository: DatabaseRepository
     val linuxEnvManager: LinuxEnvManager
     val bootstrapExtractor: BootstrapExtractor
+    val pRootDistroManager: PRootDistroManager
 }
 
 class DefaultAppContainer(private val context: Context) : AppContainer {
@@ -34,5 +36,9 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
 
     override val bootstrapExtractor: BootstrapExtractor by lazy {
         BootstrapExtractor(context)
+    }
+
+    override val pRootDistroManager: PRootDistroManager by lazy {
+        PRootDistroManager(context, linuxEnvManager)
     }
 }

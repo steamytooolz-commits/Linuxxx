@@ -442,14 +442,14 @@ class MainViewModel(
                         val file = File(homeDir, "playground.js")
                         file.writeText(trimmed)
                         val port = Regex("""(?:PORT|listen\()\s*[:=]?\s*(\d{2,5})""").find(trimmed)?.groupValues?.get(1)?.toIntOrNull() ?: 3000
-                        val nodeBin = if (File(linuxEnvManager.BINDIR, "node").exists()) "$${linuxEnvManager.BINDIR}/node" else "node"
+                        val nodeBin = if (File(linuxEnvManager.BINDIR, "node").exists()) "${linuxEnvManager.BINDIR}/node" else "node"
                         Triple(file, "$nodeBin ${file.absolutePath} || sh -c 'echo \"[Node.js Playground] Output:\"; node ${file.absolutePath} 2>&1 || nodejs ${file.absolutePath}'", port)
                     }
                     "python", "py" -> {
                         val file = File(homeDir, "playground.py")
                         file.writeText(trimmed)
                         val port = Regex("""(?:port|PORT)\s*[:=]\s*(\d{2,5})""").find(trimmed)?.groupValues?.get(1)?.toIntOrNull() ?: 8000
-                        val pyBin = if (File(linuxEnvManager.BINDIR, "python3").exists()) "$${linuxEnvManager.BINDIR}/python3" else "python3"
+                        val pyBin = if (File(linuxEnvManager.BINDIR, "python3").exists()) "${linuxEnvManager.BINDIR}/python3" else "python3"
                         Triple(file, "$pyBin ${file.absolutePath} 2>&1 || python ${file.absolutePath}", port)
                     }
                     "sql" -> {

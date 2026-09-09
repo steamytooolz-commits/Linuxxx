@@ -206,7 +206,7 @@ fun DaemonsScreen(
             DaemonControlItem(
                 name = "MariaDB / MySQL",
                 port = 3306,
-                startCmd = "mysqld_safe --datadir=\$HOME/mysql_data --port=3306 &",
+                startCmd = "mysqld_safe --datadir=\$HOME/mysql_data --port=3306 --innodb_buffer_pool_size=${uiState.innodbBufferPoolMb}M &",
                 stopCmd = "pkill mysqld",
                 checkCmd = "mysqladmin ping -u root"
             ),
@@ -220,7 +220,7 @@ fun DaemonsScreen(
             DaemonControlItem(
                 name = "MongoDB NoSQL",
                 port = 27017,
-                startCmd = "mongod --dbpath \$HOME/mongo_data --port 27017 &",
+                startCmd = "mongod --dbpath \$HOME/mongo_data --port 27017 --wiredTigerCacheSizeGB ${(uiState.wiredTigerCacheSizeMb / 1024f)} &",
                 stopCmd = "mongod --shutdown || pkill mongod",
                 checkCmd = "mongosh --eval 'db.runCommand({ping:1})' 2>/dev/null"
             )

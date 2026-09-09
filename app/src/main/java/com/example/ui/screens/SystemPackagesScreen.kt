@@ -184,6 +184,103 @@ fun SystemPackagesScreen(
             }
         }
 
+        // PRoot Linux Distribution Container Hub Card
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = if (isDark) Color(0xFF0F172A) else Color(0xFFFFFFFF)
+            ),
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp,
+                if (isDark) Color(0xFF1E293B) else Color(0xFFE2E8F0)
+            ),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (isDark) Color(0xFF0284C7) else Color(0xFFE0F2FE)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Terminal,
+                            contentDescription = null,
+                            tint = if (isDark) Color.White else Color(0xFF0284C7),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            text = "PROOT LINUX DISTRO CONTAINERS",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Black,
+                            fontFamily = FontFamily.Monospace,
+                            color = if (isDark) Color(0xFFF8FAFC) else Color(0xFF0F172A)
+                        )
+                        Text(
+                            text = "Full glibc/musl userlands on Android (245MB+ expanded footprint)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B),
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                val distros = listOf(
+                    Triple("Ubuntu 24.04 LTS (Noble Numbat)", "245 MB", "pkg install -y proot-distro && proot-distro install ubuntu && proot-distro login ubuntu"),
+                    Triple("Debian 12 Bookworm", "210 MB", "pkg install -y proot-distro && proot-distro install debian && proot-distro login debian"),
+                    Triple("Alpine Linux 3.20 (musl-libc)", "180 MB", "pkg install -y proot-distro && proot-distro install alpine && proot-distro login alpine")
+                )
+
+                distros.forEach { (name, size, cmd) ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = name,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                color = if (isDark) Color(0xFFF1F5F9) else Color(0xFF0F172A)
+                            )
+                            Text(
+                                text = "Expanded footprint: $size • Full apt/dpkg/apk package manager",
+                                fontSize = 10.sp,
+                                color = if (isDark) Color(0xFF38BDF8) else Color(0xFF0284C7)
+                            )
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (isDark) Color(0xFF0284C7) else Color(0xFF0284C7))
+                                .clickable { onExecuteCommand(cmd) }
+                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = "Launch PRoot",
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         // Environment Variables Inspector
         Card(
             shape = RoundedCornerShape(16.dp),

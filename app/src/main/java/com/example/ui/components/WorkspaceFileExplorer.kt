@@ -100,10 +100,11 @@ fun WorkspaceFileExplorer(
 
     var fileList by remember { mutableStateOf<List<FileEntry>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
-    var selectedFileForPreview by remember { mutableStateOf<File?>(null) }
-    var previewContent by remember { mutableStateOf<String?>(null) }
-    var isEditingMode by remember { mutableStateOf(false) }
-    var editedContent by remember { mutableStateOf("") }
+    
+    // Acode-style multi-tab state
+    var openTabs by remember { mutableStateOf<List<File>>(emptyList()) }
+    var activeTab by remember { mutableStateOf<File?>(null) }
+    var fileContents by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var saveStatusMsg by remember { mutableStateOf<String?>(null) }
 
     fun refreshDirectory(dir: File) {
@@ -135,43 +136,54 @@ fun WorkspaceFileExplorer(
         refreshDirectory(currentDirectory)
     }
 
-    fun openFilePreview(file: File) {
-        selectedFileForPreview = file
-        isEditingMode = false
+    fun openFileInTab(file: File) {
+        if (!openTabs.contains(file)) {
+            openTabs = openTabs + file
+        }
+        activeTab = file
         saveStatusMsg = null
-        coroutineScope.launch(Dispatchers.IO) {
-            val content = try {
-                if (file.length() > 250_000) {
-                    file.bufferedReader().useLines { lines ->
-                        lines.take(200).joinToString("\n") + "\n\n... [Truncated: File exceeds preview threshold] ..."
+        
+        if (!fileContents.containsKey(file.absolutePath)) {
+            coroutineScope.launch(Dispatchers.IO) {
+                val content = try {
+                    if (file.length() > 250_000) {
+                        file.bufferedReader().useLines { lines ->
+                            lines.take(200).joinToString("\n") + "\n\n... [Truncated: File exceeds preview threshold] ..."
+                        }
+                    } else {
+                        file.readText()
                     }
-                } else {
-                    file.readText()
+                } catch (e: Exception) {
+                    "Error loading file content: ${e.message}"
                 }
-            } catch (e: Exception) {
-                "Error loading file content: ${e.message}"
-            }
-            withContext(Dispatchers.Main) {
-                previewContent = content
-                editedContent = content
+                withContext(Dispatchers.Main) {
+                    fileContents = fileContents + (file.absolutePath to content)
+                }
             }
         }
     }
 
-    fun saveFileContent() {
-        val target = selectedFileForPreview ?: return
+    fun closeTab(file: File) {
+        val newTabs = openTabs.filter { it != file }
+        openTabs = newTabs
+        if (activeTab == file) {
+            activeTab = newTabs.lastOrNull()
+        }
+    }
+
+    fun saveActiveFile() {
+        val target = activeTab ?: return
+        val content = fileContents[target.absolutePath] ?: return
         coroutineScope.launch(Dispatchers.IO) {
             val success = try {
-                target.writeText(editedContent)
+                target.writeText(content)
                 true
             } catch (e: Exception) {
                 false
             }
             withContext(Dispatchers.Main) {
                 if (success) {
-                    previewContent = editedContent
-                    isEditingMode = false
-                    saveStatusMsg = "Saved successfully"
+                    saveStatusMsg = "Saved: ${target.name}"
                     onFileSaved(target)
                 } else {
                     saveStatusMsg = "Write failed: Permission denied or read-only"
@@ -204,7 +216,7 @@ fun WorkspaceFileExplorer(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "ACODE // WORKSPACE INSPECTOR",
+                    text = "ACODE // WORKSPACE",
                     style = MaterialTheme.typography.labelSmall,
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold,
@@ -214,6 +226,20 @@ fun WorkspaceFileExplorer(
             }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
+                if (activeTab != null) {
+                    IconButton(
+                        onClick = { saveActiveFile() },
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Save,
+                            contentDescription = "Save File",
+                            tint = Color(0xFF10B981),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
                 IconButton(
                     onClick = { refreshDirectory(currentDirectory) },
                     modifier = Modifier.size(28.dp).testTag("refresh_explorer_button")
@@ -247,7 +273,7 @@ fun WorkspaceFileExplorer(
             )
 
             bookmarks.forEach { (label, path) ->
-                val isCurrent = currentDirectory.absolutePath == path
+                val isCurrent = currentDirectory.absolutePath == path && activeTab == null
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(6.dp))
@@ -256,8 +282,7 @@ fun WorkspaceFileExplorer(
                             val target = File(path)
                             if (target.exists()) {
                                 currentDirectory = target
-                                selectedFileForPreview = null
-                                isEditingMode = false
+                                activeTab = null
                             }
                         }
                         .padding(horizontal = 8.dp, vertical = 4.dp)
@@ -273,139 +298,82 @@ fun WorkspaceFileExplorer(
             }
         }
 
-        // Path Breadcrumb & Status Bar
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Color(0xFF0B101E))
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            if (currentDirectory.parentFile != null && selectedFileForPreview == null) {
-                IconButton(
-                    onClick = {
-                        currentDirectory.parentFile?.let { currentDirectory = it }
-                    },
-                    modifier = Modifier.size(24.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Up directory",
-                        tint = Color(0xFF38BDF8),
-                        modifier = Modifier.size(14.dp)
-                    )
-                }
-                Spacer(modifier = Modifier.width(4.dp))
-            }
-
-            Text(
-                text = if (selectedFileForPreview != null) {
-                    "File: ${selectedFileForPreview?.name}"
-                } else {
-                    currentDirectory.absolutePath
-                },
-                color = Color(0xFFE2E8F0),
-                fontFamily = FontFamily.Monospace,
-                fontSize = 11.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f)
-            )
-
-            if (selectedFileForPreview != null) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    if (isEditingMode) {
-                        Box(
+        // Acode Style Open Tabs Bar
+        if (openTabs.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF0B101E))
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 4.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                openTabs.forEach { tabFile ->
+                    val isTabActive = activeTab == tabFile
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
+                            .background(if (isTabActive) Color(0xFF1E293B) else Color(0xFF0F172A))
+                            .clickable { activeTab = tabFile }
+                            .padding(start = 12.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = tabFile.name,
+                            color = if (isTabActive) Color(0xFFF1F5F9) else Color(0xFF64748B),
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp,
+                            maxLines = 1
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close Tab",
+                            tint = if (isTabActive) Color(0xFF94A3B8) else Color(0xFF475569),
                             modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(Color(0xFF10B981))
-                                .clickable { saveFileContent() }
-                                .padding(horizontal = 8.dp, vertical = 2.dp)
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.Save,
-                                    contentDescription = null,
-                                    tint = Color.Black,
-                                    modifier = Modifier.size(12.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "Save",
-                                    color = Color.Black,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                            }
-                        }
-
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(Color(0xFF475569))
-                                .clickable { isEditingMode = false }
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                        ) {
-                            Text(
-                                text = "Cancel",
-                                color = Color(0xFFF1F5F9),
-                                fontSize = 10.sp,
-                                fontFamily = FontFamily.Monospace
-                            )
-                        }
-                    } else {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(Color(0xFF0284C7))
-                                .clickable {
-                                    editedContent = previewContent ?: ""
-                                    isEditingMode = true
-                                }
-                                .padding(horizontal = 8.dp, vertical = 2.dp)
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.Edit,
-                                    contentDescription = null,
-                                    tint = Color.White,
-                                    modifier = Modifier.size(12.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "Edit",
-                                    color = Color.White,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                            }
-                        }
-
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(Color(0xFF334155))
-                                .clickable {
-                                    selectedFileForPreview = null
-                                    previewContent = null
-                                    isEditingMode = false
-                                }
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                        ) {
-                            Text(
-                                text = "Close",
-                                color = Color(0xFFF1F5F9),
-                                fontSize = 10.sp,
-                                fontFamily = FontFamily.Monospace
-                            )
-                        }
+                                .size(14.dp)
+                                .clickable { closeTab(tabFile) }
+                        )
                     }
                 }
+            }
+        }
+
+        // Path Breadcrumb & Status Bar (when in file list)
+        if (activeTab == null) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF0B101E))
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (currentDirectory.parentFile != null) {
+                    IconButton(
+                        onClick = {
+                            currentDirectory.parentFile?.let { currentDirectory = it }
+                        },
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Up directory",
+                            tint = Color(0xFF38BDF8),
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(4.dp))
+                }
+
+                Text(
+                    text = currentDirectory.absolutePath,
+                    color = Color(0xFFE2E8F0),
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
             }
         }
 
@@ -413,12 +381,12 @@ fun WorkspaceFileExplorer(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xFF1E293B))
+                    .background(Color(0xFF10B981).copy(alpha = 0.2f))
                     .padding(horizontal = 12.dp, vertical = 4.dp)
             ) {
                 Text(
                     text = saveStatusMsg!!,
-                    color = Color(0xFF38BDF8),
+                    color = Color(0xFF34D399),
                     fontSize = 10.sp,
                     fontFamily = FontFamily.Monospace
                 )
@@ -427,13 +395,13 @@ fun WorkspaceFileExplorer(
 
         HorizontalDivider(color = Color(0xFF1E293B), thickness = 1.dp)
 
-        // Main Content: File Editor, Preview or File List
+        // Main Content: File Editor or File List
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
         ) {
-            if (isLoading) {
+            if (isLoading && activeTab == null) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
@@ -444,42 +412,89 @@ fun WorkspaceFileExplorer(
                         strokeWidth = 2.dp
                     )
                 }
-            } else if (selectedFileForPreview != null) {
-                if (isEditingMode) {
-                    // Interactive Raw Editor
+            } else if (activeTab != null) {
+                val currentFile = activeTab!!
+                val content = fileContents[currentFile.absolutePath]
+                
+                if (content == null) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color(0xFF38BDF8), strokeWidth = 2.dp)
+                    }
+                } else {
+                    // Acode-style Interactive Raw Editor
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
                             .background(Color(0xFF070B14))
-                            .padding(8.dp)
                     ) {
+                        // Quick actions for the file
+                        if (currentFile.canExecute() || currentFile.name.endsWith(".sh")) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(Color(0xFF0F172A))
+                                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                                horizontalArrangement = Arrangement.End
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(Color(0xFF22C55E))
+                                        .clickable { onExecuteFile(currentFile.absolutePath) }
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.Black, modifier = Modifier.size(12.dp))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text("Run in Terminal", color = Color.Black, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                                    }
+                                }
+                            }
+                        }
+
                         OutlinedTextField(
-                            value = editedContent,
-                            onValueChange = { editedContent = it },
+                            value = content,
+                            onValueChange = { newText ->
+                                fileContents = fileContents + (currentFile.absolutePath to newText)
+                            },
                             modifier = Modifier
                                 .fillMaxSize()
                                 .testTag("file_editor_textfield"),
                             textStyle = TextStyle(
                                 fontFamily = FontFamily.Monospace,
-                                fontSize = 11.sp,
+                                fontSize = 12.sp,
                                 color = Color(0xFFE2E8F0),
-                                lineHeight = 15.sp
+                                lineHeight = 16.sp
                             ),
+                            visualTransformation = { text ->
+                                val keywordColor = Color(0xFFC678DD) // Purple
+                                val stringColor = Color(0xFF98C379)  // Green
+                                val commentColor = Color(0xFF5C6370) // Gray
+                                val numberColor = Color(0xFFD19A66)  // Orange
+                                val funcColor = Color(0xFF61AFEF)    // Blue
+                                
+                                val annotatedString = androidx.compose.ui.text.buildAnnotatedString {
+                                    append(text.text)
+                                    val stringRegex = "\".*?\"|'.*?'".toRegex()
+                                    val commentRegex = "#.*|//.*".toRegex()
+                                    val keywordRegex = "\\b(if|else|for|while|fun|val|var|import|package|class|return|export|echo|fi|then)\\b".toRegex()
+                                    val numberRegex = "\\b\\d+\\b".toRegex()
+                                    
+                                    keywordRegex.findAll(text.text).forEach { addStyle(androidx.compose.ui.text.SpanStyle(color = keywordColor), it.range.first, it.range.last + 1) }
+                                    numberRegex.findAll(text.text).forEach { addStyle(androidx.compose.ui.text.SpanStyle(color = numberColor), it.range.first, it.range.last + 1) }
+                                    stringRegex.findAll(text.text).forEach { addStyle(androidx.compose.ui.text.SpanStyle(color = stringColor), it.range.first, it.range.last + 1) }
+                                    commentRegex.findAll(text.text).forEach { addStyle(androidx.compose.ui.text.SpanStyle(color = commentColor), it.range.first, it.range.last + 1) }
+                                }
+                                androidx.compose.ui.text.input.TransformedText(annotatedString, androidx.compose.ui.text.input.OffsetMapping.Identity)
+                            },
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = Color(0xFF0284C7),
-                                unfocusedBorderColor = Color(0xFF1E293B),
+                                focusedBorderColor = Color.Transparent,
+                                unfocusedBorderColor = Color.Transparent,
                                 focusedContainerColor = Color(0xFF070B14),
                                 unfocusedContainerColor = Color(0xFF070B14)
                             )
                         )
                     }
-                } else {
-                    // File Text Viewer with Line Numbers (Acode style)
-                    FileContentReader(
-                        file = selectedFileForPreview!!,
-                        content = previewContent,
-                        onExecute = { onExecuteFile(selectedFileForPreview!!.absolutePath) }
-                    )
                 }
             } else if (fileList.isEmpty()) {
                 Column(
@@ -497,7 +512,7 @@ fun WorkspaceFileExplorer(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Directory is empty or inaccessible",
+                        text = "Directory is empty",
                         color = Color(0xFF64748B),
                         fontFamily = FontFamily.Monospace,
                         fontSize = 12.sp
@@ -514,7 +529,7 @@ fun WorkspaceFileExplorer(
                                 if (entry.isDirectory) {
                                     currentDirectory = entry.file
                                 } else {
-                                    openFilePreview(entry.file)
+                                    openFileInTab(entry.file)
                                 }
                             }
                         )

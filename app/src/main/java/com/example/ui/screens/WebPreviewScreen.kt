@@ -253,6 +253,7 @@ fun WebPreviewScreen(
                 AndroidView(
                     factory = { ctx ->
                         WebView(ctx).apply {
+                            setLayerType(android.view.View.LAYER_TYPE_SOFTWARE, null)
                             settings.javaScriptEnabled = true
                             settings.domStorageEnabled = true
                             settings.loadWithOverviewMode = true
@@ -276,6 +277,13 @@ fun WebPreviewScreen(
                                     if (request?.isForMainFrame == true) {
                                         loadError = error?.description?.toString() ?: "Connection refused"
                                     }
+                                }
+                                
+                                override fun onRenderProcessGone(
+                                    view: WebView?,
+                                    detail: android.webkit.RenderProcessGoneDetail?
+                                ): Boolean {
+                                    return true
                                 }
                             }
                             webViewInstance = this
