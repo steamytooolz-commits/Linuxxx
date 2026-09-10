@@ -2,14 +2,11 @@ package com.example.ui.components
 
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Code
-import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.Inventory2
-import androidx.compose.material.icons.filled.OpenInBrowser
-import androidx.compose.material.icons.filled.Sensors
-import androidx.compose.material.icons.filled.Storage
-import androidx.compose.material.icons.filled.Terminal
-import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -36,11 +33,11 @@ fun AppBottomBar(
     modifier: Modifier = Modifier
 ) {
     val items = listOf(
-        BottomNavItem(AppScreen.PLAYGROUND, "Playground", Icons.Default.Code),
-        BottomNavItem(AppScreen.PREVIEW, "Preview", Icons.Default.OpenInBrowser),
-        BottomNavItem(AppScreen.TERMINAL, "Terminal", Icons.Default.Terminal),
-        BottomNavItem(AppScreen.FILES, "Files", Icons.Default.Folder),
-        BottomNavItem(AppScreen.PACKAGES, "Packages", Icons.Default.Inventory2)
+        BottomNavItem(AppScreen.CODEMIRROR, "Editor", Icons.Filled.Edit),
+        BottomNavItem(AppScreen.DAEMONS, "Daemons", Icons.Filled.Settings),
+        BottomNavItem(AppScreen.TERMINAL, "Terminal", Icons.Filled.PlayArrow),
+        BottomNavItem(AppScreen.FILES, "Files", Icons.Filled.Home),
+        BottomNavItem(AppScreen.SETUP, "Setup", Icons.Filled.Refresh)
     )
 
     NavigationBar(

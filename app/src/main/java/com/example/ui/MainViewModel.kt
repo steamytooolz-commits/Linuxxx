@@ -40,6 +40,8 @@ data class TerminalLogItem(
 )
 
 enum class AppScreen(val title: String, val route: String) {
+    SETUP("First-Launch Setup", "setup"),
+    CODEMIRROR("CodeMirror 6 Editor", "codemirror"),
     PLAYGROUND("Code Playground", "playground"),
     TERMINAL("Terminal Console", "terminal"),
     FILES("Workspace & Configs", "files"),
@@ -48,7 +50,7 @@ enum class AppScreen(val title: String, val route: String) {
     PACKAGES("Package Hub & Node", "packages"),
     STUDIO("Database Studio", "studio"),
     PROCESSES("Process Monitor", "processes"),
-    SYSTEM("Alpine Linux Rootfs", "system"),
+    SYSTEM("Ubuntu 24.04 PRoot", "system"),
     TUNING("Engine Tuning", "tuning"),
     DIAGNOSTICS("Socket Diagnostics", "diagnostics")
 }
@@ -57,7 +59,7 @@ data class MainUiState(
     val isServiceRunning: Boolean = false,
     val isExtracted: Boolean = false,
     val isDarkMode: Boolean = true,
-    val currentScreen: AppScreen = AppScreen.PLAYGROUND,
+    val currentScreen: AppScreen = AppScreen.SETUP,
     val extractionProgress: BootstrapExtractor.ExtractionProgress = BootstrapExtractor.ExtractionProgress(),
     val ports: Map<Int, PortInfo> = mapOf(
         3306 to PortInfo(3306, "MariaDB"),

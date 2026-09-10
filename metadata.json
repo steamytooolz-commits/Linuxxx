@@ -1,6 +1,6 @@
 {
-  "name": "Linux DB Stack",
-  "description": "Developer Code Playground & Linux userland stack with Node.js, Python, MariaDB, Redis, MongoDB, and Live Web Preview",
+  "name": "Linuxxx",
+  "description": "Rootless Linux Database Appliance + CodeMirror Editor (MariaDB 11, Redis 7, MongoDB 7 inside PRoot)",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

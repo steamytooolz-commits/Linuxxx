@@ -1,0 +1,284 @@
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body, html {
+    width: 100%;
+    height: 100%;
+    background-color: #0d1117;
+    color: #c9d1d9;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Header & Tab Navigation */
+.app-header {
+    background-color: #161b22;
+    border-bottom: 1px solid #30363d;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 12px;
+    height: 48px;
+    flex-shrink: 0;
+}
+
+.brand-section {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.brand-badge {
+    background: linear-gradient(135deg, #10b981, #0284c7);
+    color: #ffffff;
+    font-size: 11px;
+    font-weight: 800;
+    padding: 3px 8px;
+    border-radius: 4px;
+    letter-spacing: 0.5px;
+}
+
+.active-file-indicator {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 13px;
+    color: #58a6ff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 180px;
+}
+
+.header-tabs {
+    display: flex;
+    gap: 4px;
+}
+
+.tab-btn {
+    background: transparent;
+    border: none;
+    color: #8b949e;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.tab-btn.active {
+    background-color: #21262d;
+    color: #58a6ff;
+}
+
+.action-btn {
+    background-color: #238636;
+    color: #ffffff;
+    border: 1px solid rgba(240, 246, 252, 0.1);
+    border-radius: 6px;
+    padding: 5px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.action-btn:hover {
+    background-color: #2ea043;
+}
+
+.action-btn:active {
+    background-color: #26843b;
+}
+
+.action-btn.secondary {
+    background-color: #21262d;
+    color: #c9d1d9;
+    border-color: #30363d;
+}
+
+/* Main Workspace Viewport */
+.workspace-container {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+    position: relative;
+}
+
+/* Sidebar File Tree */
+.sidebar {
+    width: 220px;
+    background-color: #0d1117;
+    border-right: 1px solid #30363d;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    flex-shrink: 0;
+}
+
+.sidebar-title {
+    padding: 10px 12px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #8b949e;
+    letter-spacing: 0.5px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #21262d;
+}
+
+.file-list {
+    list-style: none;
+    padding: 4px 0;
+}
+
+.file-item {
+    padding: 6px 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    cursor: pointer;
+    color: #8b949e;
+    user-select: none;
+}
+
+.file-item:hover {
+    background-color: #161b22;
+    color: #c9d1d9;
+}
+
+.file-item.selected {
+    background-color: #1f242c;
+    color: #58a6ff;
+    font-weight: 600;
+}
+
+/* CodeMirror Editor Host */
+.view-panel {
+    flex: 1;
+    display: none;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+}
+
+.view-panel.active {
+    display: flex;
+}
+
+#editor-host {
+    flex: 1;
+    height: 100%;
+    overflow: hidden;
+}
+
+.cm-editor {
+    height: 100%;
+    font-size: 14px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.cm-scroller {
+    overflow: auto;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+/* Database Console View */
+.db-console-panel {
+    flex: 1;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    background-color: #0d1117;
+    overflow: hidden;
+}
+
+.db-selector-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.db-chip {
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    border: 1px solid #30363d;
+    background-color: #161b22;
+    color: #8b949e;
+    transition: all 0.15s ease;
+}
+
+.db-chip.active-mariadb {
+    background-color: #00758f;
+    border-color: #00a5ca;
+    color: #ffffff;
+}
+
+.db-chip.active-redis {
+    background-color: #dc2626;
+    border-color: #ef4444;
+    color: #ffffff;
+}
+
+.db-chip.active-mongodb {
+    background-color: #15803d;
+    border-color: #22c55e;
+    color: #ffffff;
+}
+
+.query-input-box {
+    width: 100%;
+    height: 90px;
+    background-color: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    color: #f0f6fc;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 13px;
+    padding: 10px;
+    resize: none;
+    outline: none;
+}
+
+.query-input-box:focus {
+    border-color: #58a6ff;
+}
+
+.query-results-box {
+    flex: 1;
+    background-color: #010409;
+    border: 1px solid #21262d;
+    border-radius: 6px;
+    padding: 10px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 12px;
+    overflow: auto;
+    white-space: pre-wrap;
+    color: #7ee787;
+}
+
+.status-bar {
+    height: 26px;
+    background-color: #161b22;
+    border-top: 1px solid #30363d;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 12px;
+    font-size: 11px;
+    color: #8b949e;
+}

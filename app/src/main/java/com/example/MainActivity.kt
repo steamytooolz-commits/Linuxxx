@@ -49,12 +49,14 @@ import com.example.ui.components.AppDrawerContent
 import com.example.ui.components.AppTopBar
 import com.example.ui.components.TerminalConsole
 import com.example.ui.components.WorkspaceFileExplorer
+import com.example.ui.screens.CodeMirrorEditorScreen
 import com.example.ui.screens.DaemonsScreen
 import com.example.ui.screens.DatabaseStudioScreen
 import com.example.ui.screens.DiagnosticsScreen
 import com.example.ui.screens.PackagesScreen
 import com.example.ui.screens.PlaygroundScreen
 import com.example.ui.screens.ProcessMonitorScreen
+import com.example.ui.screens.SetupScreen
 import com.example.ui.screens.SystemPackagesScreen
 import com.example.ui.screens.TuningScreen
 import com.example.ui.screens.WebPreviewScreen
@@ -344,6 +346,19 @@ private fun ScreenRouter(
         label = "screen_transition"
     ) { screen ->
         when (screen) {
+            AppScreen.SETUP -> {
+                SetupScreen(
+                    uiState = uiState,
+                    onSetupCompleted = { onSelectScreen(AppScreen.CODEMIRROR) },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+            AppScreen.CODEMIRROR -> {
+                CodeMirrorEditorScreen(
+                    uiState = uiState,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
             AppScreen.PLAYGROUND -> {
                 PlaygroundScreen(
                     uiState = uiState,

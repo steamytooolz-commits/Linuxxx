@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Linuxxx CodeMirror 6 Editor</title>
+    <link rel="stylesheet" href="codemirror.css">
+    <script src="codemirror.js"></script>
+    <script src="bridge.js"></script>
+</head>
+<body>
+
+    <!-- Header bar -->
+    <header class="app-header">
+        <div class="brand-section">
+            <span class="brand-badge">LINUXXX</span>
+            <span id="active-file-title" class="active-file-indicator">init.sql</span>
+        </div>
+
+        <div class="header-tabs">
+            <button id="tab-editor" class="tab-btn active" onclick="switchTab('editor')">Code</button>
+            <button id="tab-database" class="tab-btn" onclick="switchTab('database')">DB Console</button>
+        </div>
+
+        <div style="display: flex; gap: 6px;">
+            <button class="action-btn secondary" onclick="createNewFile()">+ File</button>
+            <button class="action-btn" onclick="saveCurrentFile()">Save</button>
+        </div>
+    </header>
+
+    <!-- Main workspace view -->
+    <div class="workspace-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-title">
+                <span>Workspace</span>
+                <span onclick="refreshFileList()" style="cursor: pointer;">🔄</span>
+            </div>
+            <ul id="file-list" class="file-list"></ul>
+        </aside>
+
+        <!-- View Panels -->
+        <main id="panel-editor" class="view-panel active">
+            <div id="editor-host"></div>
+        </main>
+
+        <main id="panel-database" class="view-panel">
+            <div class="db-console-panel">
+                <div class="db-selector-row">
+                    <span style="font-size: 11px; font-weight: 700; color: #8b949e;">TARGET:</span>
+                    <button id="chip-mariadb" class="db-chip active-mariadb" onclick="setDbEngine('mariadb')">MariaDB (3306)</button>
+                    <button id="chip-redis" class="db-chip" onclick="setDbEngine('redis')">Redis (6379)</button>
+                    <button id="chip-mongodb" class="db-chip" onclick="setDbEngine('mongodb')">MongoDB (27017)</button>
+                </div>
+
+                <textarea id="query-input" class="query-input-box" placeholder="Enter SQL / Redis command / Mongo command..."></textarea>
+
+                <div style="display: flex; justify-content: flex-end;">
+                    <button class="action-btn" onclick="executeQuery()">▶ Run Query</button>
+                </div>
+
+                <div style="font-size: 11px; font-weight: 700; color: #8b949e;">OUTPUT RESULT:</div>
+                <div id="query-results" class="query-results-box">Waiting for query execution...</div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Footer status -->
+    <footer class="status-bar">
+        <span id="status-text">Ready — Rootfs Workspace Mounted</span>
+        <span id="host-tag">127.0.0.1 (Internal Proot Loopback)</span>
+    </footer>
+
+</body>
+</html>
