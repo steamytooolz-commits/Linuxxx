@@ -159,42 +159,47 @@ class ProotInstaller(private val context: Context) {
     }
 
     private fun downloadProotFallback(): Boolean {
-        val urlStr = "https://github.com/ahmed-alnassif/proot/releases/download/v26.08.25-7266fb3/proot-aarch64.zip"
-        try {
-            Log.i(tag, "Attempting to download PRoot fallback zip from $urlStr")
-            val url = java.net.URL(urlStr)
-            val connection = url.openConnection() as java.net.HttpURLConnection
-            connection.connectTimeout = 15000
-            connection.readTimeout = 20000
-            if (connection.responseCode == 200) {
-                java.util.zip.ZipInputStream(connection.inputStream).use { zip ->
-                    var entry = zip.nextEntry
-                    while (entry != null) {
-                        val name = entry.name
-                        if (name == "proot" || name.endsWith("/proot")) {
-                            FileOutputStream(prootBinary).use { output ->
-                                zip.copyTo(output)
+        val candidateUrls = listOf(
+            "https://github.com/ahmed-alnassif/proot/releases/download/v26.08.25-7266fb3/proot-aarch64.zip",
+            "https://github.com/ahmed-alnassif/proot/releases/download/v26.08.23-7266fb3/proot-aarch64.zip"
+        )
+        for (urlStr in candidateUrls) {
+            try {
+                Log.i(tag, "Attempting to download PRoot fallback zip from $urlStr")
+                val url = java.net.URL(urlStr)
+                val connection = url.openConnection() as java.net.HttpURLConnection
+                connection.connectTimeout = 15000
+                connection.readTimeout = 20000
+                if (connection.responseCode == 200) {
+                    java.util.zip.ZipInputStream(connection.inputStream).use { zip ->
+                        var entry = zip.nextEntry
+                        while (entry != null) {
+                            val name = entry.name
+                            if (name == "proot" || name.endsWith("/proot")) {
+                                FileOutputStream(prootBinary).use { output ->
+                                    zip.copyTo(output)
+                                }
+                            } else if (name == "libloader.so" || name.endsWith("/libloader.so")) {
+                                FileOutputStream(File(context.filesDir, "libloader.so")).use { output ->
+                                    zip.copyTo(output)
+                                }
+                            } else if (name == "libloader_m32.so" || name.endsWith("/libloader_m32.so")) {
+                                FileOutputStream(File(context.filesDir, "libloader_m32.so")).use { output ->
+                                    zip.copyTo(output)
+                                }
                             }
-                        } else if (name == "libloader.so" || name.endsWith("/libloader.so")) {
-                            FileOutputStream(File(context.filesDir, "libloader.so")).use { output ->
-                                zip.copyTo(output)
-                            }
-                        } else if (name == "libloader_m32.so" || name.endsWith("/libloader_m32.so")) {
-                            FileOutputStream(File(context.filesDir, "libloader_m32.so")).use { output ->
-                                zip.copyTo(output)
-                            }
+                            zip.closeEntry()
+                            entry = zip.nextEntry
                         }
-                        zip.closeEntry()
-                        entry = zip.nextEntry
+                    }
+                    if (prootBinary.exists() && prootBinary.length() > 0) {
+                        Log.i(tag, "Successfully downloaded fallback PRoot ZIP and extracted components from $urlStr")
+                        return true
                     }
                 }
-                if (prootBinary.exists() && prootBinary.length() > 0) {
-                    Log.i(tag, "Successfully downloaded fallback PRoot ZIP and extracted components")
-                    return true
-                }
+            } catch (e: Exception) {
+                Log.w(tag, "Failed to download fallback from $urlStr: ${e.message}")
             }
-        } catch (e: Exception) {
-            Log.w(tag, "Failed to download from $urlStr: ${e.message}")
         }
         return false
     }

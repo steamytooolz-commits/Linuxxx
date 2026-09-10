@@ -33,8 +33,34 @@ class RootfsExtractor {
 
             onProgress(0.52f, "Inspecting archive: ${archiveFile.name}...")
 
-            val isXz = archiveFile.name.endsWith(".xz", ignoreCase = true)
-            val isGz = archiveFile.name.endsWith(".gz", ignoreCase = true) || archiveFile.name.endsWith(".tgz", ignoreCase = true)
+            var isXz = archiveFile.name.endsWith(".xz", ignoreCase = true)
+            var isGz = archiveFile.name.endsWith(".gz", ignoreCase = true) || archiveFile.name.endsWith(".tgz", ignoreCase = true)
+
+            // Probe magic bytes to override incorrect extensions
+            try {
+                FileInputStream(archiveFile).use { fis ->
+                    val header = ByteArray(6)
+                    val read = fis.read(header)
+                    if (read >= 2) {
+                        if (header[0] == 0x1F.toByte() && header[1] == 0x8B.toByte()) {
+                            isGz = true
+                            isXz = false
+                        } else if (read >= 6 &&
+                            header[0] == 0xFD.toByte() &&
+                            header[1] == 0x37.toByte() &&
+                            header[2] == 0x7A.toByte() &&
+                            header[3] == 0x58.toByte() &&
+                            header[4] == 0x5A.toByte() &&
+                            header[5] == 0x00.toByte()
+                        ) {
+                            isXz = true
+                            isGz = false
+                        }
+                    }
+                }
+            } catch (probeEx: Exception) {
+                Log.w(tag, "Failed to probe file magic bytes: ${probeEx.message}")
+            }
 
             FileInputStream(archiveFile).use { fis ->
                 BufferedInputStream(fis, 128 * 1024).use { bis ->
