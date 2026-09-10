@@ -46,6 +46,7 @@ android {
   }
 
   packaging {
+    jniLibs.useLegacyPackaging = true
     resources.excludes += setOf(
       "META-INF/DEPENDENCIES",
       "META-INF/LICENSE*",

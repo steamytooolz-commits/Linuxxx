@@ -50,6 +50,7 @@ import com.example.ui.components.AppTopBar
 import com.example.ui.screens.CodeMirrorEditorScreen
 import com.example.ui.screens.DaemonsScreen
 import com.example.ui.screens.SetupScreen
+import com.example.ui.screens.TerminalScreen
 import com.example.ui.theme.MyApplicationTheme
 import kotlinx.coroutines.launch
 
@@ -354,6 +355,17 @@ private fun ScreenRouter(
                     onToggleService = onToggleService,
                     onProbePorts = onProbePorts,
                     onExecuteCommand = onExecuteCommand
+                )
+            }
+            AppScreen.TERMINAL -> {
+                TerminalScreen(
+                    uiState = uiState,
+                    onStartInteractiveShell = onStartInteractiveShell,
+                    onSendInteractiveInput = onSendInteractiveInput,
+                    onSendControlSignal = onSendControlSignal,
+                    onKillInteractiveSession = onKillInteractiveSession,
+                    onClearLogs = onClearLogs,
+                    modifier = Modifier.fillMaxSize()
                 )
             }
             else -> {}

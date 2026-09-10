@@ -31,6 +31,12 @@ class ProotInstaller(private val context: Context) {
 
             if (sourceSo.exists() && sourceSo.length() > 0) {
                 sourceSo.copyTo(prootBinary, overwrite = true)
+                // Also copy loaders
+                val loader1 = File(nativeLibDir, "libloader.so")
+                if (loader1.exists()) loader1.copyTo(File(context.filesDir, "libloader.so"), overwrite = true)
+                val loader2 = File(nativeLibDir, "libloader_m32.so")
+                if (loader2.exists()) loader2.copyTo(File(context.filesDir, "libloader_m32.so"), overwrite = true)
+                
                 resolvedSource = "nativeLibraryDir (${sourceSo.absolutePath})"
                 Log.i(tag, "Extracted proot from $resolvedSource")
             } else {
@@ -41,6 +47,12 @@ class ProotInstaller(private val context: Context) {
 
                 if (altSo.exists() && altSo.length() > 0) {
                     altSo.copyTo(prootBinary, overwrite = true)
+                    // Also copy loaders
+                    val loader1 = File(abiDir, "libloader.so")
+                    if (loader1.exists()) loader1.copyTo(File(context.filesDir, "libloader.so"), overwrite = true)
+                    val loader2 = File(abiDir, "libloader_m32.so")
+                    if (loader2.exists()) loader2.copyTo(File(context.filesDir, "libloader_m32.so"), overwrite = true)
+
                     resolvedSource = "parentLibDir (${altSo.absolutePath})"
                     Log.i(tag, "Extracted proot from $resolvedSource")
                 } else {
@@ -65,9 +77,15 @@ class ProotInstaller(private val context: Context) {
             }
 
             if (resolvedSource == null && !prootBinary.exists()) {
-                val errorMsg = "Proot binary source could not be found. Checked locations: ${checkedPaths.joinToString("; ")}. Ensure native ARM64 library or asset is packaged."
-                Log.e(tag, errorMsg)
-                return Result.failure(IllegalStateException(errorMsg))
+                Log.i(tag, "Proot binary local source could not be found. Trying network download fallback...")
+                val downloaded = downloadProotFallback()
+                if (downloaded) {
+                    resolvedSource = "network download fallback"
+                } else {
+                    val errorMsg = "Proot binary source could not be found locally or via download. Checked locations: ${checkedPaths.joinToString("; ")}. Ensure native ARM64 library or asset is packaged or internet is available."
+                    Log.e(tag, errorMsg)
+                    return Result.failure(IllegalStateException(errorMsg))
+                }
             }
 
             // Apply read and execute permissions for userland
@@ -96,5 +114,35 @@ class ProotInstaller(private val context: Context) {
             Log.e(tag, fullError, e)
             return Result.failure(IllegalStateException(fullError, e))
         }
+    }
+
+    private fun downloadProotFallback(): Boolean {
+        val urls = listOf(
+            "https://skirsten.github.io/proot-portable-android-binaries/aarch64/proot",
+            "https://raw.githubusercontent.com/skirsten/proot-portable-android-binaries/master/aarch64/proot"
+        )
+        for (urlStr in urls) {
+            try {
+                Log.i(tag, "Attempting to download PRoot fallback from $urlStr")
+                val url = java.net.URL(urlStr)
+                val connection = url.openConnection() as java.net.HttpURLConnection
+                connection.connectTimeout = 15000
+                connection.readTimeout = 20000
+                if (connection.responseCode == 200) {
+                    connection.inputStream.use { input ->
+                        FileOutputStream(prootBinary).use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    if (prootBinary.exists() && prootBinary.length() > 0) {
+                        Log.i(tag, "Successfully downloaded fallback PRoot binary")
+                        return true
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(tag, "Failed to download from $urlStr: ${e.message}")
+            }
+        }
+        return false
     }
 }

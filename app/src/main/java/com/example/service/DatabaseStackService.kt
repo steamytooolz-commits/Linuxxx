@@ -188,6 +188,8 @@ class DatabaseStackService : Service() {
                     pb.directory(filesDir)
                     pb.environment()["HOME"] = "/root"
                     pb.environment()["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+                    pb.environment()["PROOT_LOADER"] = java.io.File(filesDir, "libloader.so").absolutePath
+                    pb.environment()["PROOT_LOADER_32"] = java.io.File(filesDir, "libloader_m32.so").absolutePath
                     pb.environment()["MARIADB_ROOT_PASSWORD"] = password
                     pb.redirectErrorStream(true)
 

@@ -42,7 +42,8 @@ data class TerminalLogItem(
 enum class AppScreen(val title: String, val route: String) {
     SETUP("First-Launch Setup", "setup"),
     CODEMIRROR("CodeMirror 6 Editor", "codemirror"),
-    DAEMONS("Database Daemons", "daemons")
+    DAEMONS("Database Daemons", "daemons"),
+    TERMINAL("Interactive Terminal", "terminal")
 }
 
 data class MainUiState(
@@ -106,7 +107,8 @@ class MainViewModel(
     application: Application,
     private val repository: DatabaseRepository,
     private val linuxEnvManager: LinuxEnvManager,
-    private val bootstrapExtractor: BootstrapExtractor
+    private val bootstrapExtractor: BootstrapExtractor,
+    private val ubuntuRootfsManager: com.example.core.UbuntuRootfsManager
 ) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow(
@@ -587,16 +589,66 @@ class MainViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val env = linuxEnvManager.getLinuxEnvironment()
-                val shellBinary = if (File(linuxEnvManager.BINDIR, "bash").exists() && File(linuxEnvManager.BINDIR, "bash").canExecute()) {
-                    File(linuxEnvManager.BINDIR, "bash").absolutePath
+                
+                // Set PROOT_LOADER paths in the interactive environment
+                val context = getApplication<Application>().applicationContext
+                env["PROOT_LOADER"] = File(context.filesDir, "libloader.so").absolutePath
+                env["PROOT_LOADER_32"] = File(context.filesDir, "libloader_m32.so").absolutePath
+                
+                val cmdList = if (ubuntuRootfsManager.isEnvironmentReady()) {
+                    val rootfsDir = ubuntuRootfsManager.rootfsDir
+                    val dataDir = ubuntuRootfsManager.dataDir
+                    val workspaceDir = File(context.filesDir, "workspace")
+                    val proot = File(context.filesDir, "proot").absolutePath
+                    val rootfs = rootfsDir.absolutePath
+                    val data = dataDir.absolutePath
+                    
+                    if (command.isBlank()) {
+                        listOf(
+                            proot,
+                            "-0",
+                            "-r", rootfs,
+                            "-b", "/dev",
+                            "-b", "/proc",
+                            "-b", "/sys",
+                            "-b", "$data/mysql:/var/lib/mysql",
+                            "-b", "$data/redis:/var/lib/redis",
+                            "-b", "$data/mongodb:/var/lib/mongodb",
+                            "-b", "$data/run:/var/run",
+                            "-b", "$data/log:/var/log",
+                            "-b", "${workspaceDir.absolutePath}:/root/workspace",
+                            "-w", "/root",
+                            "/bin/bash"
+                        )
+                    } else {
+                        listOf(
+                            proot,
+                            "-0",
+                            "-r", rootfs,
+                            "-b", "/dev",
+                            "-b", "/proc",
+                            "-b", "/sys",
+                            "-b", "$data/mysql:/var/lib/mysql",
+                            "-b", "$data/redis:/var/lib/redis",
+                            "-b", "$data/mongodb:/var/lib/mongodb",
+                            "-b", "$data/run:/var/run",
+                            "-b", "$data/log:/var/log",
+                            "-b", "${workspaceDir.absolutePath}:/root/workspace",
+                            "-w", "/root",
+                            "/bin/bash", "-c", command
+                        )
+                    }
                 } else {
-                    "/system/bin/sh"
-                }
-
-                val cmdList = if (command.isBlank()) {
-                    listOf(shellBinary, "-i")
-                } else {
-                    listOf(shellBinary, "-c", command)
+                    val shellBinary = if (File(linuxEnvManager.BINDIR, "bash").exists() && File(linuxEnvManager.BINDIR, "bash").canExecute()) {
+                        File(linuxEnvManager.BINDIR, "bash").absolutePath
+                    } else {
+                        "/system/bin/sh"
+                    }
+                    if (command.isBlank()) {
+                        listOf(shellBinary, "-i")
+                    } else {
+                        listOf(shellBinary, "-c", command)
+                    }
                 }
 
                 val pb = ProcessBuilder(cmdList)
@@ -760,7 +812,8 @@ class MainViewModel(
                         application = application,
                         repository = container.databaseRepository,
                         linuxEnvManager = container.linuxEnvManager,
-                        bootstrapExtractor = container.bootstrapExtractor
+                        bootstrapExtractor = container.bootstrapExtractor,
+                        ubuntuRootfsManager = container.ubuntuRootfsManager
                     ) as T
                 }
             }

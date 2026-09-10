@@ -134,6 +134,8 @@ class UbuntuRootfsManager(private val context: Context) {
                     pb.directory(context.filesDir)
                     pb.environment()["HOME"] = "/root"
                     pb.environment()["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+                    pb.environment()["PROOT_LOADER"] = File(context.filesDir, "libloader.so").absolutePath
+                    pb.environment()["PROOT_LOADER_32"] = File(context.filesDir, "libloader_m32.so").absolutePath
                     pb.redirectErrorStream(true)
                     val proc = pb.start()
                     val reader = proc.inputStream.bufferedReader()

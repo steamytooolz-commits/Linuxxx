@@ -238,6 +238,7 @@ fun AppDrawerContent(
             val navItems = listOf(
                 DrawerNavItem(AppScreen.CODEMIRROR, "Code Editor", Icons.Default.Code, "CodeMirror editor"),
                 DrawerNavItem(AppScreen.DAEMONS, "Database Daemons", Icons.Default.Storage, "MariaDB, Redis & Mongo matrix"),
+                DrawerNavItem(AppScreen.TERMINAL, "Interactive Terminal", Icons.Default.Terminal, "Bash shell session"),
                 DrawerNavItem(AppScreen.SETUP, "Setup", Icons.Default.Settings, "First-launch setup")
             )
 
