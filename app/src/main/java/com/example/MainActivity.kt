@@ -99,7 +99,6 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     }
-
                     LinuxDashboardApp(
                         uiState = uiState,
                         onSelectScreen = { screen -> viewModel.setScreen(screen) },
