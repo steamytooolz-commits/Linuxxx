@@ -131,36 +131,53 @@ class RootfsExtractor {
                 }
             }
 
-            // Verify essential bash executable exists
+            // 1. Verify and repair /bin/bash
             val bash = File(destDir, "bin/bash")
             val usrBash = File(destDir, "usr/bin/bash")
 
-            // Auto-repair missing links between /bin/bash and /usr/bin/bash
-            if (!bash.exists() && usrBash.exists()) {
-                try {
-                    val binDir = File(destDir, "bin")
-                    if (!binDir.exists()) binDir.mkdirs()
-                    createSymbolicLink("usr/bin/bash", bash)
-                    if (!bash.exists()) {
-                        usrBash.copyTo(bash, overwrite = true)
+            // Case A: /usr/bin/bash exists but /bin/bash doesn't (or is broken)
+            if (usrBash.exists() && usrBash.length() > 0) {
+                if (!bash.exists() || bash.length() == 0L) {
+                    try {
+                        // Delete any broken symlink first
+                        if (bash.exists() || !bash.canonicalPath.endsWith("bash")) {
+                            bash.delete()
+                        }
+                        // Create parent dirs and a proper absolute symlink
+                        bash.parentFile?.mkdirs()
+                        val targetPath = usrBash.absolutePath
+                        Os.symlink(targetPath, bash.absolutePath)
+                        Log.i(tag, "Repaired /bin/bash -> $targetPath")
+                    } catch (e: Exception) {
+                        // Fallback: copy the physical file instead of symlinking
+                        Log.w(tag, "Symlink repair failed, falling back to copy: ${e.message}")
+                        try {
+                            usrBash.copyTo(bash, overwrite = true)
+                        } catch (copyEx: Exception) {
+                            Log.e(tag, "Failed copy fallback for bash: ${copyEx.message}")
+                        }
                     }
-                } catch (e: Exception) {
-                    Log.w(tag, "Failed bash symlink repair: ${e.message}")
                 }
             }
 
-            if (!usrBash.exists() && bash.exists()) {
-                try {
-                    val usrBinDir = File(destDir, "usr/bin")
-                    if (!usrBinDir.exists()) usrBinDir.mkdirs()
-                    bash.copyTo(usrBash, overwrite = true)
-                } catch (e: Exception) {
-                    Log.w(tag, "Failed usrBash copy repair: ${e.message}")
+            // Case B: /bin/bash exists but /usr/bin/bash doesn't
+            if (bash.exists() && bash.length() > 0) {
+                if (!usrBash.exists() || usrBash.length() == 0L) {
+                    try {
+                        usrBash.parentFile?.mkdirs()
+                        bash.copyTo(usrBash, overwrite = true)
+                        Log.i(tag, "Repaired /usr/bin/bash from /bin/bash")
+                    } catch (e: Exception) {
+                        Log.w(tag, "Failed to repair /usr/bin/bash: ${e.message}")
+                    }
                 }
             }
 
+            // 2. Final validation
             val isBashValid = (bash.exists() && bash.length() > 0) || (usrBash.exists() && usrBash.length() > 0)
+
             if (isBashValid) {
+                // Ensure executable permissions on both
                 if (bash.exists()) bash.setExecutable(true, false)
                 if (usrBash.exists()) usrBash.setExecutable(true, false)
                 onProgress(0.92f, "Rootfs extracted and verified (/bin/bash available)")

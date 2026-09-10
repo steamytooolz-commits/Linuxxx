@@ -16,6 +16,7 @@ class ProotCommandBuilder(private val context: Context) {
         val proot = ProotInstaller(context).getExecutableProot().absolutePath
         val rootfs = rootfsDir.absolutePath
         val data = dataDir.absolutePath
+        val shell = resolveShellPath(rootfsDir)
 
         return listOf(
             proot,
@@ -31,7 +32,7 @@ class ProotCommandBuilder(private val context: Context) {
             "-b", "$data/log:/var/log",
             "-b", "${workspaceDir.absolutePath}:/root/workspace",
             "-w", "/root",
-            "/bin/bash", "/start-all.sh"
+            shell, "/start-all.sh"
         )
     }
 
@@ -42,6 +43,7 @@ class ProotCommandBuilder(private val context: Context) {
         val proot = ProotInstaller(context).getExecutableProot().absolutePath
         val rootfs = rootfsDir.absolutePath
         val data = dataDir.absolutePath
+        val shell = resolveShellPath(rootfsDir)
 
         return listOf(
             proot,
@@ -55,7 +57,17 @@ class ProotCommandBuilder(private val context: Context) {
             "-b", "$data/mongodb:/var/lib/mongodb",
             "-b", "$data/run:/var/run",
             "-w", "/root",
-            "/bin/bash", "/setup.sh"
+            shell, "/setup.sh"
         )
+    }
+
+    private fun resolveShellPath(rootfsDir: File): String {
+        val binBash = File(rootfsDir, "bin/bash")
+        val usrBinBash = File(rootfsDir, "usr/bin/bash")
+        return when {
+            binBash.exists() && binBash.length() > 0 -> "/bin/bash"
+            usrBinBash.exists() && usrBinBash.length() > 0 -> "/usr/bin/bash"
+            else -> "/bin/bash"
+        }
     }
 }
