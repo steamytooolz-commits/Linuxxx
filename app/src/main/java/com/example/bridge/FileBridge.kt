@@ -118,16 +118,7 @@ open class FileBridge(
 
         return try {
             val url = "jdbc:mariadb://127.0.0.1:3306/?connectTimeout=3000&socketTimeout=5000"
-            // Try connecting with stored password, then fallback to blank if password hasn't taken effect yet
-            val conn = try {
-                DriverManager.getConnection(url, "root", password)
-            } catch (authEx: Exception) {
-                if (password.isNotEmpty()) {
-                    DriverManager.getConnection(url, "root", "")
-                } else {
-                    throw authEx
-                }
-            }
+            val conn = DriverManager.getConnection(url, "root", password)
 
             conn.use { c ->
                 c.createStatement().use { stmt ->

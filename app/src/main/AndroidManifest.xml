@@ -38,7 +38,7 @@
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Runs a local Linux database stack (MariaDB, Redis, MongoDB) inside a proot container for on-device development." />
+                android:value="Runs a local Linux database stack (MariaDB, Redis, MongoDB) inside a proot container." />
         </service>
     </application>
 

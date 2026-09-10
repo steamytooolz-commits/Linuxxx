@@ -47,19 +47,9 @@ import com.example.ui.MainViewModel
 import com.example.ui.components.AppBottomBar
 import com.example.ui.components.AppDrawerContent
 import com.example.ui.components.AppTopBar
-import com.example.ui.components.TerminalConsole
-import com.example.ui.components.WorkspaceFileExplorer
 import com.example.ui.screens.CodeMirrorEditorScreen
 import com.example.ui.screens.DaemonsScreen
-import com.example.ui.screens.DatabaseStudioScreen
-import com.example.ui.screens.DiagnosticsScreen
-import com.example.ui.screens.PackagesScreen
-import com.example.ui.screens.PlaygroundScreen
-import com.example.ui.screens.ProcessMonitorScreen
 import com.example.ui.screens.SetupScreen
-import com.example.ui.screens.SystemPackagesScreen
-import com.example.ui.screens.TuningScreen
-import com.example.ui.screens.WebPreviewScreen
 import com.example.ui.theme.MyApplicationTheme
 import kotlinx.coroutines.launch
 
@@ -359,77 +349,6 @@ private fun ScreenRouter(
                     modifier = Modifier.fillMaxSize()
                 )
             }
-            AppScreen.PLAYGROUND -> {
-                PlaygroundScreen(
-                    uiState = uiState,
-                    onCodeChange = onCodeChange,
-                    onLanguageChange = onLanguageChange,
-                    onRunScript = onRunScript,
-                    onStopScript = onStopScript,
-                    onNavigateToScreen = onSelectScreen
-                )
-            }
-            AppScreen.PREVIEW -> {
-                WebPreviewScreen(
-                    uiState = uiState,
-                    onUrlChange = onUrlChange
-                )
-            }
-            AppScreen.PACKAGES -> {
-                PackagesScreen(
-                    uiState = uiState,
-                    onInstallPackage = onInstallPackage,
-                    onExecuteCommand = onExecuteCommand
-                )
-            }
-            AppScreen.TERMINAL -> {
-                TerminalConsole(
-                    logs = uiState.logs,
-                    isAutoScroll = uiState.isAutoScrollEnabled,
-                    onToggleAutoScroll = onToggleAutoScroll,
-                    onClearLogs = onClearLogs,
-                    onExecuteCommand = onExecuteCommand,
-                    isInteractiveSessionActive = uiState.isInteractiveSessionActive,
-                    activeSessionTitle = uiState.activeSessionTitle,
-                    activeSessionPid = uiState.activeSessionPid,
-                    onStartInteractiveShell = onStartInteractiveShell,
-                    onSendInteractiveInput = onSendInteractiveInput,
-                    onSendControlSignal = onSendControlSignal,
-                    onKillInteractiveSession = onKillInteractiveSession,
-                    modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp)
-                )
-            }
-            AppScreen.FILES -> {
-                WorkspaceFileExplorer(
-                    rootDirPath = uiState.prefixPath,
-                    homeDirPath = uiState.homePath,
-                    onExecuteFile = { path -> onExecuteCommand("sh $path") },
-                    onFileSaved = { file -> onExecuteCommand("echo 'Config updated: ${file.name}'") },
-                    modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp)
-                )
-            }
-            AppScreen.STUDIO -> {
-                DatabaseStudioScreen(
-                    uiState = uiState,
-                    onExecuteCommand = onExecuteCommand,
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
-            AppScreen.PROCESSES -> {
-                ProcessMonitorScreen(
-                    uiState = uiState,
-                    onExecuteCommand = onExecuteCommand,
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
-            AppScreen.SYSTEM -> {
-                SystemPackagesScreen(
-                    uiState = uiState,
-                    onExtractBootstrap = onExtractBootstrap,
-                    onExecuteCommand = onExecuteCommand,
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
             AppScreen.DAEMONS -> {
                 DaemonsScreen(
                     uiState = uiState,
@@ -438,22 +357,7 @@ private fun ScreenRouter(
                     onExecuteCommand = onExecuteCommand
                 )
             }
-            AppScreen.TUNING -> {
-                TuningScreen(
-                    uiState = uiState,
-                    onWiredTigerChange = onWiredTigerChange,
-                    onInnodbChange = onInnodbChange,
-                    onProbeIntervalChange = onProbeIntervalChange,
-                    onMaxLogBufferChange = onMaxLogBufferChange
-                )
-            }
-            AppScreen.DIAGNOSTICS -> {
-                DiagnosticsScreen(
-                    uiState = uiState,
-                    onProbeAll = onProbePorts,
-                    onExecuteCommand = onExecuteCommand
-                )
-            }
+            else -> {}
         }
     }
 }

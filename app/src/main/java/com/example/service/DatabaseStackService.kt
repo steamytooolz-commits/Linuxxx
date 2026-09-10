@@ -214,8 +214,15 @@ class DatabaseStackService : Service() {
                     readerJob.cancel()
                     prootProcess = null
 
+                    Log.i(TAG, "PRoot process terminated with exit code $exitCode (service isActive=$isActive)")
+
                     if (!isActive) {
-                        emitLog("PROOT", "Proot container stopped cleanly (service destroyed).", false)
+                        emitLog("PROOT", "Proot container stopped cleanly (service stopping, exit code $exitCode).", false)
+                        break
+                    }
+
+                    if (exitCode == 0) {
+                        emitLog("PROOT", "PRoot process exited cleanly with exit code 0. Standby mode active.", false)
                         break
                     }
 

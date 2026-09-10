@@ -42,17 +42,7 @@ data class TerminalLogItem(
 enum class AppScreen(val title: String, val route: String) {
     SETUP("First-Launch Setup", "setup"),
     CODEMIRROR("CodeMirror 6 Editor", "codemirror"),
-    PLAYGROUND("Code Playground", "playground"),
-    TERMINAL("Terminal Console", "terminal"),
-    FILES("Workspace & Configs", "files"),
-    PREVIEW("Live Web Preview", "preview"),
-    DAEMONS("Database Daemons", "daemons"),
-    PACKAGES("Package Hub & Node", "packages"),
-    STUDIO("Database Studio", "studio"),
-    PROCESSES("Process Monitor", "processes"),
-    SYSTEM("Ubuntu 24.04 PRoot", "system"),
-    TUNING("Engine Tuning", "tuning"),
-    DIAGNOSTICS("Socket Diagnostics", "diagnostics")
+    DAEMONS("Database Daemons", "daemons")
 }
 
 data class MainUiState(

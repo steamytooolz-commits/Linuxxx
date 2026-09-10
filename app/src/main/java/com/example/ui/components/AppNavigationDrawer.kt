@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Storage
@@ -235,17 +236,9 @@ fun AppDrawerContent(
 
             // Navigation Drawer Items
             val navItems = listOf(
-                DrawerNavItem(AppScreen.PLAYGROUND, "Code Playground", Icons.Default.Code, "Node.js, Python, SQL & script runner"),
-                DrawerNavItem(AppScreen.PREVIEW, "Live Web Preview", Icons.Default.OpenInBrowser, "Embedded browser for localhost servers"),
-                DrawerNavItem(AppScreen.STUDIO, "Database Studio", Icons.Default.Storage, "SQL, Redis & Mongo query workbench"),
-                DrawerNavItem(AppScreen.TERMINAL, "Terminal Console", Icons.Default.Terminal, "Interactive bash & real-time logs"),
-                DrawerNavItem(AppScreen.FILES, "Workspace & Configs", Icons.Default.Folder, "Acode file explorer & live editor"),
-                DrawerNavItem(AppScreen.PROCESSES, "Process Monitor", Icons.Default.Memory, "POSIX PIDs, task manager & kill controls"),
-                DrawerNavItem(AppScreen.PACKAGES, "Package Hub & Node", Icons.Default.Inventory2, "Install npm, pip, git & packages"),
-                DrawerNavItem(AppScreen.SYSTEM, "Alpine Linux Rootfs", Icons.Default.FolderZip, "Standalone Alpine Linux aarch64 environment"),
+                DrawerNavItem(AppScreen.CODEMIRROR, "Code Editor", Icons.Default.Code, "CodeMirror editor"),
                 DrawerNavItem(AppScreen.DAEMONS, "Database Daemons", Icons.Default.Storage, "MariaDB, Redis & Mongo matrix"),
-                DrawerNavItem(AppScreen.TUNING, "Engine Tuning", Icons.Default.Tune, "InnoDB, WiredTiger & buffer sliders"),
-                DrawerNavItem(AppScreen.DIAGNOSTICS, "Socket Diagnostics", Icons.Default.Sensors, "Deep loopback socket tester")
+                DrawerNavItem(AppScreen.SETUP, "Setup", Icons.Default.Settings, "First-launch setup")
             )
 
             navItems.forEach { item ->

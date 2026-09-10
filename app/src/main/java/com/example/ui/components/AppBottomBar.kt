@@ -35,8 +35,6 @@ fun AppBottomBar(
     val items = listOf(
         BottomNavItem(AppScreen.CODEMIRROR, "Editor", Icons.Filled.Edit),
         BottomNavItem(AppScreen.DAEMONS, "Daemons", Icons.Filled.Settings),
-        BottomNavItem(AppScreen.TERMINAL, "Terminal", Icons.Filled.PlayArrow),
-        BottomNavItem(AppScreen.FILES, "Files", Icons.Filled.Home),
         BottomNavItem(AppScreen.SETUP, "Setup", Icons.Filled.Refresh)
     )
 

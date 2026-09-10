@@ -19,8 +19,13 @@ apt-get update
 
 # Install MariaDB 11.x, Redis 7.x, and MongoDB 7.x simultaneously
 if ! apt-get install -y --no-install-recommends mariadb-server redis-server mongodb-org; then
-    echo "[setup.sh] MongoDB 7.0 install failed, attempting fallback to mongodb package from universe..."
-    apt-get install -y --no-install-recommends mariadb-server redis-server mongodb || apt-get install -y --no-install-recommends mariadb-server redis-server
+    echo "[setup.sh] MongoDB 7.0 install failed (likely pre-ARMv8.2-A device without LSE). Attempting fallback to MongoDB 4.4 ARM64 repository..."
+    rm -f /etc/apt/sources.list.d/mongodb-org-7.0.list
+    echo "deb [ signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu focal/mongodb-org/4.4 multiverse" \
+       | tee /etc/apt/sources.list.d/mongodb-org-4.4.list
+    apt-get update
+    apt-get install -y --no-install-recommends mariadb-server redis-server mongodb-org || \
+       apt-get install -y --no-install-recommends mariadb-server redis-server
 fi
 
 # Ensure all runtime and data directories exist

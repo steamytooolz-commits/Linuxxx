@@ -57,7 +57,9 @@ class ProotInstaller(private val context: Context) {
                             Log.i(tag, "Extracted proot from $resolvedSource")
                         }
                     } catch (assetEx: Exception) {
-                        Log.d(tag, "Asset libproot.so not found: ${assetEx.message}")
+                        val assetWarn = "Asset libproot.so not found or extraction failed: ${assetEx.message}"
+                        Log.w(tag, assetWarn, assetEx)
+                        checkedPaths.add("assets/libproot.so (failed: ${assetEx.message})")
                     }
                 }
             }
