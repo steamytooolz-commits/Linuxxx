@@ -56,22 +56,64 @@ class ProotInstaller(private val context: Context) {
                     resolvedSource = "parentLibDir (${altSo.absolutePath})"
                     Log.i(tag, "Extracted proot from $resolvedSource")
                 } else {
-                    // Source 3: Assets fallback (assets/libproot.so or assets/proot)
-                    checkedPaths.add("assets/libproot.so")
-                    try {
-                        context.assets.open("libproot.so").use { input ->
-                            FileOutputStream(prootBinary).use { output ->
-                                input.copyTo(output)
+                    // Source 3: Manual self-extraction from currently running APK ZIP file (High Reliability)
+                    val apkPath = context.packageCodePath
+                    if (apkPath != null) {
+                        checkedPaths.add("APK:$apkPath")
+                        try {
+                            java.util.zip.ZipFile(File(apkPath)).use { zip ->
+                                val entry = zip.getEntry("lib/arm64-v8a/libproot.so")
+                                    ?: zip.getEntry("lib/arm64/libproot.so")
+                                if (entry != null) {
+                                    zip.getInputStream(entry).use { input ->
+                                        FileOutputStream(prootBinary).use { output ->
+                                            input.copyTo(output)
+                                        }
+                                    }
+                                    // Extract companions
+                                    val l1 = zip.getEntry("lib/arm64-v8a/libloader.so") ?: zip.getEntry("lib/arm64/libloader.so")
+                                    if (l1 != null) {
+                                        zip.getInputStream(l1).use { input ->
+                                            FileOutputStream(File(context.filesDir, "libloader.so")).use { output ->
+                                                input.copyTo(output)
+                                            }
+                                        }
+                                    }
+                                    val l2 = zip.getEntry("lib/arm64-v8a/libloader_m32.so") ?: zip.getEntry("lib/arm64/libloader_m32.so")
+                                    if (l2 != null) {
+                                        zip.getInputStream(l2).use { input ->
+                                            FileOutputStream(File(context.filesDir, "libloader_m32.so")).use { output ->
+                                                input.copyTo(output)
+                                            }
+                                        }
+                                    }
+                                    resolvedSource = "APK self-extraction"
+                                    Log.i(tag, "Extracted proot from APK self-extraction!")
+                                }
                             }
+                        } catch (zipEx: Exception) {
+                            Log.w(tag, "Self-extraction from APK failed: ${zipEx.message}")
                         }
-                        if (prootBinary.exists() && prootBinary.length() > 0) {
-                            resolvedSource = "assets/libproot.so"
-                            Log.i(tag, "Extracted proot from $resolvedSource")
+                    }
+
+                    if (resolvedSource == null) {
+                        // Source 4: Assets fallback
+                        checkedPaths.add("assets/libproot.so")
+                        try {
+                            context.assets.open("libproot.so").use { input ->
+                                FileOutputStream(prootBinary).use { output ->
+                                    input.copyTo(output)
+                                }
+                            }
+                            if (prootBinary.exists() && prootBinary.length() > 0) {
+                                resolvedSource = "assets/libproot.so"
+                                Log.i(tag, "Extracted proot from $resolvedSource")
+                            }
+                        } catch (assetEx: Exception) {
+                            val assetWarn = "Asset libproot.so not found: ${assetEx.message}"
+                            Log.w(tag, assetWarn, assetEx)
+                            checkedPaths.add("assets/libproot.so (failed: ${assetEx.message})")
                         }
-                    } catch (assetEx: Exception) {
-                        val assetWarn = "Asset libproot.so not found or extraction failed: ${assetEx.message}"
-                        Log.w(tag, assetWarn, assetEx)
-                        checkedPaths.add("assets/libproot.so (failed: ${assetEx.message})")
                     }
                 }
             }
@@ -117,31 +159,42 @@ class ProotInstaller(private val context: Context) {
     }
 
     private fun downloadProotFallback(): Boolean {
-        val urls = listOf(
-            "https://skirsten.github.io/proot-portable-android-binaries/aarch64/proot",
-            "https://raw.githubusercontent.com/skirsten/proot-portable-android-binaries/master/aarch64/proot"
-        )
-        for (urlStr in urls) {
-            try {
-                Log.i(tag, "Attempting to download PRoot fallback from $urlStr")
-                val url = java.net.URL(urlStr)
-                val connection = url.openConnection() as java.net.HttpURLConnection
-                connection.connectTimeout = 15000
-                connection.readTimeout = 20000
-                if (connection.responseCode == 200) {
-                    connection.inputStream.use { input ->
-                        FileOutputStream(prootBinary).use { output ->
-                            input.copyTo(output)
+        val urlStr = "https://github.com/ahmed-alnassif/proot/releases/download/v26.08.25-7266fb3/proot-aarch64.zip"
+        try {
+            Log.i(tag, "Attempting to download PRoot fallback zip from $urlStr")
+            val url = java.net.URL(urlStr)
+            val connection = url.openConnection() as java.net.HttpURLConnection
+            connection.connectTimeout = 15000
+            connection.readTimeout = 20000
+            if (connection.responseCode == 200) {
+                java.util.zip.ZipInputStream(connection.inputStream).use { zip ->
+                    var entry = zip.nextEntry
+                    while (entry != null) {
+                        val name = entry.name
+                        if (name == "proot" || name.endsWith("/proot")) {
+                            FileOutputStream(prootBinary).use { output ->
+                                zip.copyTo(output)
+                            }
+                        } else if (name == "libloader.so" || name.endsWith("/libloader.so")) {
+                            FileOutputStream(File(context.filesDir, "libloader.so")).use { output ->
+                                zip.copyTo(output)
+                            }
+                        } else if (name == "libloader_m32.so" || name.endsWith("/libloader_m32.so")) {
+                            FileOutputStream(File(context.filesDir, "libloader_m32.so")).use { output ->
+                                zip.copyTo(output)
+                            }
                         }
-                    }
-                    if (prootBinary.exists() && prootBinary.length() > 0) {
-                        Log.i(tag, "Successfully downloaded fallback PRoot binary")
-                        return true
+                        zip.closeEntry()
+                        entry = zip.nextEntry
                     }
                 }
-            } catch (e: Exception) {
-                Log.w(tag, "Failed to download from $urlStr: ${e.message}")
+                if (prootBinary.exists() && prootBinary.length() > 0) {
+                    Log.i(tag, "Successfully downloaded fallback PRoot ZIP and extracted components")
+                    return true
+                }
             }
+        } catch (e: Exception) {
+            Log.w(tag, "Failed to download from $urlStr: ${e.message}")
         }
         return false
     }
