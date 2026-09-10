@@ -22,12 +22,11 @@ if ! apt-get install -y --no-install-recommends mariadb-server redis-server mong
     echo "[setup.sh] MongoDB 7.0 install failed (likely pre-ARMv8.2-A device without LSE). Attempting fallback to MongoDB 4.4 ARM64 repository..."
     rm -f /etc/apt/sources.list.d/mongodb-org-7.0.list
     
-    # Temporarily add Ubuntu 20.04 (Focal) main repo to install libssl1.1 dependency required by MongoDB 4.4
-    echo "deb [trusted=yes] http://ports.ubuntu.com/ubuntu-ports focal main" | tee /etc/apt/sources.list.d/focal-main.list
-    echo "deb [trusted=yes] http://archive.ubuntu.com/ubuntu focal main" | tee -a /etc/apt/sources.list.d/focal-main.list
-    apt-get update || true
-    apt-get install -y --allow-unauthenticated --no-install-recommends libssl1.1 || true
-    rm -f /etc/apt/sources.list.d/focal-main.list
+    # Download and install libssl1.1 directly from official Ubuntu ports without repository mixing
+    echo "[setup.sh] Downloading and installing libssl1.1 directly..."
+    curl -fsSL -O http://ports.ubuntu.com/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_arm64.deb
+    dpkg -i libssl1.1_1.1.1f-1ubuntu2_arm64.deb || apt-get install -fy
+    rm -f libssl1.1_1.1.1f-1ubuntu2_arm64.deb
     
     # Download 4.4 key
     curl -fsSL https://www.mongodb.org/static/pgp/server-4.4.asc | \

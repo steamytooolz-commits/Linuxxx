@@ -111,7 +111,7 @@ open class FileBridge(
 
     private fun executeMariaDbQuery(query: String): String {
         val password = if (context != null) {
-            DatabaseSecurityManager.getInstance(context).getMariaDbPassword()
+            DatabaseSecurityManager.getInstance(context).getOrCreateMariaDbPassword()
         } else {
             ""
         }

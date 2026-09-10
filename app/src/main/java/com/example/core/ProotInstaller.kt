@@ -55,6 +55,7 @@ class ProotInstaller(private val context: Context) {
 
     fun install(): Result<File> {
         val checkedPaths = mutableListOf<String>()
+        val installationErrors = mutableListOf<String>()
         var resolvedSource: String? = null
 
         try {
@@ -81,7 +82,9 @@ class ProotInstaller(private val context: Context) {
                     if (loader2.exists()) loader2.copyTo(File(context.filesDir, "libloader_m32.so"), overwrite = true)
                     resolvedSource = "extracted nativeLibraryDir to filesDir"
                 } catch (e: Exception) {
-                    Log.w(tag, "Failed fallback copy from nativeLibDir: ${e.message}")
+                    val msg = "Failed fallback copy from nativeLibDir: ${e.message}"
+                    Log.w(tag, msg, e)
+                    installationErrors.add(msg)
                 }
             }
 
@@ -107,7 +110,9 @@ class ProotInstaller(private val context: Context) {
                         if (loader2.exists()) loader2.copyTo(File(context.filesDir, "libloader_m32.so"), overwrite = true)
                         resolvedSource = "extracted parentLibDir to filesDir"
                     } catch (e: Exception) {
-                        Log.w(tag, "Failed fallback copy from parentLibDir: ${e.message}")
+                        val msg = "Failed fallback copy from parentLibDir: ${e.message}"
+                        Log.w(tag, msg, e)
+                        installationErrors.add(msg)
                     }
                 }
             }
@@ -148,7 +153,9 @@ class ProotInstaller(private val context: Context) {
                             }
                         }
                     } catch (zipEx: Exception) {
-                        Log.w(tag, "Self-extraction from APK failed: ${zipEx.message}")
+                        val msg = "Self-extraction from APK failed: ${zipEx.message}"
+                        Log.w(tag, msg, zipEx)
+                        installationErrors.add(msg)
                     }
                 }
             }
@@ -167,7 +174,9 @@ class ProotInstaller(private val context: Context) {
                         Log.i(tag, "Extracted proot from $resolvedSource")
                     }
                 } catch (assetEx: Exception) {
-                    Log.w(tag, "Asset libproot.so not found: ${assetEx.message}")
+                    val msg = "Asset libproot.so extraction failed: ${assetEx.message}"
+                    Log.e(tag, msg, assetEx)
+                    installationErrors.add(msg)
                 }
             }
 
@@ -177,7 +186,7 @@ class ProotInstaller(private val context: Context) {
                 if (downloaded) {
                     resolvedSource = "network download fallback"
                 } else {
-                    val errorMsg = "Proot binary source could not be found locally or via download. Checked locations: ${checkedPaths.joinToString("; ")}"
+                    val errorMsg = "Proot binary source could not be found locally or via download. Checked locations: ${checkedPaths.joinToString("; ")}. Setup errors: [${installationErrors.joinToString("; ")}]"
                     Log.e(tag, errorMsg)
                     return Result.failure(IllegalStateException(errorMsg))
                 }
@@ -197,12 +206,12 @@ class ProotInstaller(private val context: Context) {
                 Log.i(tag, "PRoot binary verified successfully from source '$resolvedSource' at: ${executableFile.absolutePath}")
                 return Result.success(executableFile)
             } else {
-                val errorDetails = "PRoot binary exists=${executableFile.exists()} canExecute=${executableFile.canExecute()} path=${executableFile.absolutePath}"
+                val errorDetails = "PRoot binary exists=${executableFile.exists()} canExecute=${executableFile.canExecute()} path=${executableFile.absolutePath}. Setup errors: [${installationErrors.joinToString("; ")}]"
                 Log.e(tag, errorDetails)
                 return Result.failure(IllegalStateException(errorDetails))
             }
         } catch (e: Exception) {
-            val fullError = "Failed to install PRoot binary. Cause: ${e.message}"
+            val fullError = "Failed to install PRoot binary. Cause: ${e.message}. Setup errors: [${installationErrors.joinToString("; ")}]"
             Log.e(tag, fullError, e)
             return Result.failure(IllegalStateException(fullError, e))
         }
