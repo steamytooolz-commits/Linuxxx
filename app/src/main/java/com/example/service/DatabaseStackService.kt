@@ -92,7 +92,6 @@ class DatabaseStackService : Service() {
 
     private var wakeLock: PowerManager.WakeLock? = null
     private var prootProcess: Process? = null
-    private val fallbackServers = ConcurrentHashMap<Int, ServerSocket>()
 
     private lateinit var dbRepository: DatabaseRepository
     private lateinit var rootfsManager: UbuntuRootfsManager
@@ -157,8 +156,7 @@ class DatabaseStackService : Service() {
             if (rootfsManager.isEnvironmentReady()) {
                 launchProotStack()
             } else {
-                emitLog("PRoot", "Rootfs not initialized yet. Please complete first-launch setup.", false)
-                startFallbackLoopbackResponders()
+                emitLog("PROOT", "Rootfs environment is not fully ready. Complete first-launch setup.", true)
             }
 
             startPortMonitoring()
@@ -192,8 +190,7 @@ class DatabaseStackService : Service() {
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to spawn proot container", e)
-            emitLog("PROOT", "Container launch error: ${e.message}. Starting internal responders.", true)
-            startFallbackLoopbackResponders()
+            emitLog("PROOT", "Container launch failure: ${e.message}", true)
         }
     }
 
@@ -220,75 +217,6 @@ class DatabaseStackService : Service() {
             }
         } catch (_: Exception) {
             false
-        }
-    }
-
-    private fun startFallbackLoopbackResponders() {
-        val ports = listOf(3306, 6379, 27017)
-        for (port in ports) {
-            if (fallbackServers.containsKey(port)) continue
-            try {
-                val server = ServerSocket()
-                server.reuseAddress = true
-                server.bind(InetSocketAddress("127.0.0.1", port))
-                fallbackServers[port] = server
-
-                serviceScope.launch {
-                    try {
-                        while (isActive && !server.isClosed) {
-                            val client = server.accept()
-                            serviceScope.launch {
-                                handleFallbackClient(port, client)
-                            }
-                        }
-                    } catch (_: Exception) {}
-                }
-                emitLog("LOOPBACK", "Active loopback listener on 127.0.0.1:$port", false)
-            } catch (e: Exception) {
-                Log.d(TAG, "Port $port already bound or in use: ${e.message}")
-            }
-        }
-    }
-
-    private fun handleFallbackClient(port: Int, socket: Socket) {
-        try {
-            socket.soTimeout = 3000
-            val output = socket.getOutputStream()
-            when (port) {
-                6379 -> {
-                    val input = socket.getInputStream()
-                    val buf = ByteArray(1024)
-                    val read = input.read(buf)
-                    if (read > 0) {
-                        val req = String(buf, 0, read)
-                        if (req.contains("PING", ignoreCase = true)) {
-                            output.write("+PONG\r\n".toByteArray())
-                        } else {
-                            output.write("+OK (Linuxxx Redis 7.x ready)\r\n".toByteArray())
-                        }
-                        output.flush()
-                    }
-                }
-                3306 -> {
-                    // Send basic MariaDB handshake packet
-                    val handshake = byteArrayOf(
-                        0x4a, 0x00, 0x00, 0x00, 0x0a,
-                        '1'.code.toByte(), '1'.code.toByte(), '.'.code.toByte(), '4'.code.toByte(),
-                        '.'.code.toByte(), '0'.code.toByte(), '-'.code.toByte(), 'M'.code.toByte(),
-                        'a'.code.toByte(), 'r'.code.toByte(), 'i'.code.toByte(), 'a'.code.toByte(),
-                        'D'.code.toByte(), 'B'.code.toByte(), 0x00
-                    )
-                    output.write(handshake)
-                    output.flush()
-                }
-                27017 -> {
-                    output.write("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK".toByteArray())
-                    output.flush()
-                }
-            }
-            socket.close()
-        } catch (_: Exception) {
-            try { socket.close() } catch (_: Exception) {}
         }
     }
 
@@ -324,11 +252,6 @@ class DatabaseStackService : Service() {
         } catch (e: Exception) {
             Log.w(TAG, "Error destroying proot process: ${e.message}")
         }
-
-        for ((_, server) in fallbackServers) {
-            try { server.close() } catch (_: Exception) {}
-        }
-        fallbackServers.clear()
 
         if (wakeLock?.isHeld == true) {
             try {

@@ -2,16 +2,22 @@ package com.example.bridge
 
 import android.webkit.JavascriptInterface
 import com.google.gson.Gson
-import java.io.File
-import java.sql.DriverManager
-import redis.clients.jedis.Jedis
 import com.mongodb.client.MongoClients
 import org.bson.Document
+import redis.clients.jedis.Jedis
+import java.io.File
+import java.sql.DriverManager
 
+/**
+ * Native JavaScript interface exposed to CodeMirror 6 inside the WebView.
+ * Handles file management (read, write, list, delete) and direct query execution
+ * against MariaDB (3306), Redis (6379), and MongoDB (27017).
+ */
 open class FileBridge(
     private val root: File,
     private val onLog: (String) -> Unit = {}
 ) {
+
     private val gson = Gson()
 
     init {
@@ -89,11 +95,13 @@ open class FileBridge(
                 else -> gson.toJson(mapOf("error" to "Unsupported database type: $type"))
             }
         } catch (e: Exception) {
-            gson.toJson(mapOf(
-                "status" to "error",
-                "database" to type,
-                "error" to (e.message ?: e.toString())
-            ))
+            gson.toJson(
+                mapOf(
+                    "status" to "error",
+                    "database" to type,
+                    "error" to (e.message ?: e.toString())
+                )
+            )
         }
     }
 
@@ -116,29 +124,35 @@ open class FileBridge(
                             }
                             rows.add(row)
                         }
-                        gson.toJson(mapOf(
-                            "status" to "success",
-                            "database" to "mariadb",
-                            "columns" to columns,
-                            "rowCount" to rows.size,
-                            "rows" to rows
-                        ))
+                        gson.toJson(
+                            mapOf(
+                                "status" to "success",
+                                "database" to "mariadb",
+                                "columns" to columns,
+                                "rowCount" to rows.size,
+                                "rows" to rows
+                            )
+                        )
                     } else {
-                        gson.toJson(mapOf(
-                            "status" to "success",
-                            "database" to "mariadb",
-                            "affectedRows" to stmt.updateCount
-                        ))
+                        gson.toJson(
+                            mapOf(
+                                "status" to "success",
+                                "database" to "mariadb",
+                                "affectedRows" to stmt.updateCount
+                            )
+                        )
                     }
                 }
             }
         } catch (e: Exception) {
-            gson.toJson(mapOf(
-                "status" to "error",
-                "database" to "mariadb",
-                "port" to 3306,
-                "message" to (e.message ?: "Failed to connect to MariaDB on 127.0.0.1:3306")
-            ))
+            gson.toJson(
+                mapOf(
+                    "status" to "error",
+                    "database" to "mariadb",
+                    "port" to 3306,
+                    "message" to (e.message ?: "Failed to connect to MariaDB on 127.0.0.1:3306")
+                )
+            )
         }
     }
 
@@ -159,20 +173,24 @@ open class FileBridge(
                     "INFO" -> jedis.info(if (args.isNotEmpty()) args[0] else null)
                     else -> "Command '$cmd' processed on 127.0.0.1:6379"
                 }
-                gson.toJson(mapOf(
-                    "status" to "success",
-                    "database" to "redis",
-                    "command" to cmd,
-                    "result" to result
-                ))
+                gson.toJson(
+                    mapOf(
+                        "status" to "success",
+                        "database" to "redis",
+                        "command" to cmd,
+                        "result" to result
+                    )
+                )
             }
         } catch (e: Exception) {
-            gson.toJson(mapOf(
-                "status" to "error",
-                "database" to "redis",
-                "port" to 6379,
-                "message" to (e.message ?: "Failed to connect to Redis on 127.0.0.1:6379")
-            ))
+            gson.toJson(
+                mapOf(
+                    "status" to "error",
+                    "database" to "redis",
+                    "port" to 6379,
+                    "message" to (e.message ?: "Failed to connect to Redis on 127.0.0.1:6379")
+                )
+            )
         }
     }
 
@@ -191,19 +209,23 @@ open class FileBridge(
                     Document("ping", 1)
                 }
                 val result = db.runCommand(commandDoc)
-                gson.toJson(mapOf(
-                    "status" to "success",
-                    "database" to "mongodb",
-                    "result" to Document.parse(result.toJson())
-                ))
+                gson.toJson(
+                    mapOf(
+                        "status" to "success",
+                        "database" to "mongodb",
+                        "result" to Document.parse(result.toJson())
+                    )
+                )
             }
         } catch (e: Exception) {
-            gson.toJson(mapOf(
-                "status" to "error",
-                "database" to "mongodb",
-                "port" to 27017,
-                "message" to (e.message ?: "Failed to connect to MongoDB on 127.0.0.1:27017")
-            ))
+            gson.toJson(
+                mapOf(
+                    "status" to "error",
+                    "database" to "mongodb",
+                    "port" to 27017,
+                    "message" to (e.message ?: "Failed to connect to MongoDB on 127.0.0.1:27017")
+                )
+            )
         }
     }
 }
