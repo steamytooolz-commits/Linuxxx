@@ -190,28 +190,46 @@ function setDbEngine(engine) {
 }
 
 function executeQuery() {
-    const query = document.getElementById("query-input").value.trim();
-    const resultBox = document.getElementById("query-results");
-    if (!query) return;
+    let target = activeDatabase;
+    const targetRadio = document.querySelector('input[name="db-target"]:checked');
+    if (targetRadio) {
+        target = targetRadio.value;
+    }
 
-    resultBox.innerText = `Connecting to 127.0.0.1 [${activeDatabase}] and executing...\n`;
+    let query = "";
+    const inputEl = document.getElementById("query-input");
+    if (inputEl && inputEl.value && inputEl.value.trim().length > 0) {
+        query = inputEl.value.trim();
+    } else if (editorInstance && editorInstance.state && editorInstance.state.doc) {
+        query = editorInstance.state.doc.toString().trim();
+    }
+
+    const outputEl = document.getElementById("query-output") || document.getElementById("query-results");
+    if (!query) {
+        if (outputEl) outputEl.textContent = "Please enter a query or open a script.";
+        return;
+    }
+
+    if (outputEl) outputEl.textContent = `Connecting to 127.0.0.1 [${target}] and executing...\n`;
 
     if (hasNativeBridge() && typeof window.AndroidFileBridge.runQuery === "function") {
         try {
-            const rawJson = window.AndroidFileBridge.runQuery(activeDatabase, query);
-            let formatted = rawJson;
+            const rawResult = window.AndroidFileBridge.runQuery(target, query);
+            let formatted = rawResult;
             try {
-                const parsed = JSON.parse(rawJson);
+                const parsed = JSON.parse(rawResult);
                 formatted = JSON.stringify(parsed, null, 2);
             } catch (_) {}
-            resultBox.innerText = formatted;
-            updateStatus(`Query executed successfully on ${activeDatabase}`);
+            if (outputEl) outputEl.textContent = formatted;
+            updateStatus(`Query executed successfully on ${target}`);
         } catch (e) {
-            resultBox.innerText = `Execution error:\n${e.message || e}`;
+            if (outputEl) outputEl.textContent = `Execution error:\n${e.message || e}`;
             updateStatus(`Query failed: ${e.message}`);
         }
     } else {
-        resultBox.innerText = `Native AndroidFileBridge.runQuery not attached in this preview.\nExecuted simulated query: "${query}" on ${activeDatabase}.\nStatus: Ready.`;
+        if (outputEl) {
+            outputEl.textContent = `Native AndroidFileBridge.runQuery not attached in this preview.\nExecuted simulated query: "${query}" on ${target}.\nStatus: Ready.`;
+        }
     }
 }
 
@@ -220,4 +238,36 @@ function updateStatus(text) {
     if (el) el.innerText = text;
 }
 
-window.addEventListener("DOMContentLoaded", initApplication);
+window.addEventListener("DOMContentLoaded", () => {
+    initApplication();
+
+    const runBtn = document.getElementById("run-query-btn");
+    if (runBtn) {
+        runBtn.addEventListener("click", () => {
+            const targetRadio = document.querySelector('input[name="db-target"]:checked');
+            const target = targetRadio ? targetRadio.value : activeDatabase;
+            let query = "";
+            const inputEl = document.getElementById("query-input");
+            if (inputEl && inputEl.value && inputEl.value.trim().length > 0) {
+                query = inputEl.value.trim();
+            } else if (editorInstance && editorInstance.state && editorInstance.state.doc) {
+                query = editorInstance.state.doc.toString();
+            }
+
+            const outputEl = document.getElementById("query-output") || document.getElementById("query-results");
+            if (hasNativeBridge() && typeof window.AndroidFileBridge.runQuery === "function") {
+                try {
+                    const result = window.AndroidFileBridge.runQuery(target, query);
+                    if (outputEl) outputEl.textContent = result;
+                    updateStatus(`Executed query on ${target}`);
+                } catch (e) {
+                    if (outputEl) outputEl.textContent = `Error: ${e.message || e}`;
+                }
+            } else {
+                if (outputEl) {
+                    outputEl.textContent = `Preview mode: simulated ${target} query.\nResult: OK`;
+                }
+            }
+        });
+    }
+});

@@ -169,11 +169,14 @@ class DatabaseStackService : Service() {
 
     private fun launchProotStack() {
         try {
+            rootfsManager.workspaceDir.mkdirs()
             val cmd = rootfsManager.buildProotCommand()
             emitLog("PROOT", "Executing: ${cmd.joinToString(" ")}", false)
 
             val pb = ProcessBuilder(cmd)
-            pb.directory(rootfsManager.workspaceDir)
+            pb.directory(filesDir)
+            pb.environment()["HOME"] = "/root"
+            pb.environment()["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
             pb.redirectErrorStream(true)
 
             val proc = pb.start()

@@ -5,6 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Linuxxx CodeMirror 6 Editor</title>
     <link rel="stylesheet" href="codemirror.css">
+    <style>
+        .db-radio-label {
+            display: inline-flex;
+            align-items: center;
+            cursor: pointer;
+            user-select: none;
+        }
+        .db-radio-label input[type="radio"] {
+            margin-right: 4px;
+            accent-color: #38bdf8;
+            cursor: pointer;
+        }
+    </style>
     <script src="codemirror.js"></script>
     <script src="bridge.js"></script>
 </head>
@@ -48,19 +61,29 @@
             <div class="db-console-panel">
                 <div class="db-selector-row">
                     <span style="font-size: 11px; font-weight: 700; color: #8b949e;">TARGET:</span>
-                    <button id="chip-mariadb" class="db-chip active-mariadb" onclick="setDbEngine('mariadb')">MariaDB (3306)</button>
-                    <button id="chip-redis" class="db-chip" onclick="setDbEngine('redis')">Redis (6379)</button>
-                    <button id="chip-mongodb" class="db-chip" onclick="setDbEngine('mongodb')">MongoDB (27017)</button>
+                    <label class="db-radio-label">
+                        <input type="radio" name="db-target" value="mariadb" checked onchange="setDbEngine('mariadb')">
+                        <span id="chip-mariadb" class="db-chip active-mariadb">MariaDB (3306)</span>
+                    </label>
+                    <label class="db-radio-label">
+                        <input type="radio" name="db-target" value="redis" onchange="setDbEngine('redis')">
+                        <span id="chip-redis" class="db-chip">Redis (6379)</span>
+                    </label>
+                    <label class="db-radio-label">
+                        <input type="radio" name="db-target" value="mongodb" onchange="setDbEngine('mongodb')">
+                        <span id="chip-mongodb" class="db-chip">MongoDB (27017)</span>
+                    </label>
                 </div>
 
                 <textarea id="query-input" class="query-input-box" placeholder="Enter SQL / Redis command / Mongo command..."></textarea>
 
                 <div style="display: flex; justify-content: flex-end;">
-                    <button class="action-btn" onclick="executeQuery()">▶ Run Query</button>
+                    <button id="run-query-btn" class="action-btn">▶ Run Query</button>
                 </div>
 
                 <div style="font-size: 11px; font-weight: 700; color: #8b949e;">OUTPUT RESULT:</div>
-                <div id="query-results" class="query-results-box">Waiting for query execution...</div>
+                <div id="query-output" class="query-results-box">Waiting for query execution...</div>
+                <div id="query-results" style="display:none;"></div>
             </div>
         </main>
     </div>

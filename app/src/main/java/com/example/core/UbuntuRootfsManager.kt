@@ -75,6 +75,33 @@ class UbuntuRootfsManager(private val context: Context) {
             onStatus("Deploying database configs & supervisor scripts...")
             configureStackFiles()
 
+            // Step 5: Run setup.sh inside proot container to install MariaDB, Redis, MongoDB
+            val mariaInstalled = File(rootfsDir, "usr/sbin/mariadbd").exists() || File(rootfsDir, "usr/sbin/mysqld").exists()
+            if (!mariaInstalled && prootBinary.exists() && (File(rootfsDir, "bin/bash").exists() || File(rootfsDir, "usr/bin/bash").exists())) {
+                onStatus("Running container package setup (installing MariaDB, Redis, MongoDB)...")
+                try {
+                    val setupCmd = buildSetupCommand()
+                    val pb = ProcessBuilder(setupCmd)
+                    pb.directory(context.filesDir)
+                    pb.environment()["HOME"] = "/root"
+                    pb.environment()["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+                    pb.redirectErrorStream(true)
+                    val proc = pb.start()
+                    val reader = proc.inputStream.bufferedReader()
+                    var line = reader.readLine()
+                    while (line != null) {
+                        Log.d(TAG, "[setup.sh] $line")
+                        if (line.contains("install", ignoreCase = true) || line.contains("Setting up", ignoreCase = true) || line.contains("Unpacking", ignoreCase = true)) {
+                            onStatus(line)
+                        }
+                        line = reader.readLine()
+                    }
+                    proc.waitFor()
+                } catch (e: Exception) {
+                    Log.w(TAG, "Container setup note: ${e.message}")
+                }
+            }
+
             _setupState.value = SetupStep.Completed
             onStatus("Linuxxx database appliance initialized successfully!")
             Result.success(Unit)
@@ -279,34 +306,49 @@ class UbuntuRootfsManager(private val context: Context) {
         File(dataDir, "run/mongodb").mkdirs()
         File(dataDir, "log").mkdirs()
 
-        // Supervisor script
+        // Supervisor script - copy to /start-all.sh and /root/start-all.sh
+        val startAllRoot = File(rootfsDir, "start-all.sh")
         val startAllDest = File(rootfsDir, "root/start-all.sh")
-        startAllDest.parentFile?.mkdirs()
+        copyAssetToFile("start-all.sh", startAllRoot)
         copyAssetToFile("start-all.sh", startAllDest)
+        startAllRoot.setExecutable(true, false)
         startAllDest.setExecutable(true, false)
         try {
+            Runtime.getRuntime().exec(arrayOf("chmod", "755", startAllRoot.absolutePath)).waitFor()
             Runtime.getRuntime().exec(arrayOf("chmod", "755", startAllDest.absolutePath)).waitFor()
         } catch (ignored: Exception) {}
 
-        // Setup script
+        // Setup script - copy to /setup.sh and /root/setup.sh
+        val setupRoot = File(rootfsDir, "setup.sh")
         val setupScriptDest = File(rootfsDir, "root/setup.sh")
+        copyAssetToFile("setup.sh", setupRoot)
         copyAssetToFile("setup.sh", setupScriptDest)
+        setupRoot.setExecutable(true, false)
         setupScriptDest.setExecutable(true, false)
+        try {
+            Runtime.getRuntime().exec(arrayOf("chmod", "755", setupRoot.absolutePath)).waitFor()
+            Runtime.getRuntime().exec(arrayOf("chmod", "755", setupScriptDest.absolutePath)).waitFor()
+        } catch (ignored: Exception) {}
 
-        // MariaDB config
-        val mariaConfigDir = File(rootfsDir, "etc/mysql/mariadb.conf.d")
-        mariaConfigDir.mkdirs()
-        copyAssetToFile("config/mariadb.cnf", File(mariaConfigDir, "99-android.cnf"))
-
-        // Redis config
-        val redisConfigDir = File(rootfsDir, "etc/redis")
-        redisConfigDir.mkdirs()
-        copyAssetToFile("config/redis.conf", File(redisConfigDir, "redis.conf"))
-
-        // MongoDB config
-        val mongoConfigDir = File(rootfsDir, "etc")
-        mongoConfigDir.mkdirs()
-        copyAssetToFile("config/mongod.conf", File(mongoConfigDir, "mongod.conf"))
+        // Copy tuned database configs into the rootfs
+        val configMap = mapOf(
+            "mariadb.cnf" to "etc/mysql/mariadb.conf.d/99-android.cnf",
+            "redis.conf" to "etc/redis/redis.conf",
+            "mongod.conf" to "etc/mongod.conf"
+        )
+        for ((asset, dest) in configMap) {
+            val destFile = File(rootfsDir, dest)
+            destFile.parentFile?.mkdirs()
+            try {
+                context.assets.open("config/$asset").use { input ->
+                    FileOutputStream(destFile).use { output ->
+                        input.copyTo(output)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Config $asset copy failed: ${e.message}")
+            }
+        }
     }
 
     private fun copyAssetToFile(assetPath: String, destFile: File): Boolean {
@@ -325,29 +367,36 @@ class UbuntuRootfsManager(private val context: Context) {
     }
 
     fun buildProotCommand(): List<String> {
-        val proot = prootBinary.absolutePath
-        val rootfs = rootfsDir.absolutePath
-        val data = dataDir.absolutePath
-
+        val proot = File(context.filesDir, "proot").absolutePath
+        val rootfs = File(context.filesDir, "rootfs").absolutePath
+        val dataDir = File(context.filesDir, "data").absolutePath
         return listOf(
-            proot,
-            "-0",
-            "-r", rootfs,
-            "-b", "/dev",
-            "-b", "/proc",
-            "-b", "/sys",
-            "-b", "$data/mysql:/var/lib/mysql",
-            "-b", "$data/redis:/var/lib/redis",
-            "-b", "$data/mongodb:/var/lib/mongodb",
-            "-b", "$data/run:/var/run",
-            "-b", "$data/log:/var/log",
+            proot, "-0", "-r", rootfs,
+            "-b", "/dev", "-b", "/proc", "-b", "/sys",
+            "-b", "$dataDir/mysql:/var/lib/mysql",
+            "-b", "$dataDir/redis:/var/lib/redis",
+            "-b", "$dataDir/mongodb:/var/lib/mongodb",
+            "-b", "$dataDir/run:/var/run",
+            "-b", "$dataDir/log:/var/log",
             "-b", "${workspaceDir.absolutePath}:/root/workspace",
             "-w", "/root",
-            "/usr/bin/env", "-i",
-            "HOME=/root",
-            "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-            "TERM=xterm-256color",
-            "/bin/bash", "/root/start-all.sh"
+            "/bin/bash", "/start-all.sh"
+        )
+    }
+
+    fun buildSetupCommand(): List<String> {
+        val proot = File(context.filesDir, "proot").absolutePath
+        val rootfs = File(context.filesDir, "rootfs").absolutePath
+        val dataDir = File(context.filesDir, "data").absolutePath
+        return listOf(
+            proot, "-0", "-r", rootfs,
+            "-b", "/dev", "-b", "/proc", "-b", "/sys",
+            "-b", "$dataDir/mysql:/var/lib/mysql",
+            "-b", "$dataDir/redis:/var/lib/redis",
+            "-b", "$dataDir/mongodb:/var/lib/mongodb",
+            "-b", "$dataDir/run:/var/run",
+            "-w", "/root",
+            "/bin/bash", "/setup.sh"
         )
     }
 }
