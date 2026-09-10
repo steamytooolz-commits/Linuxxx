@@ -36,7 +36,8 @@ class UbuntuRootfsManager(private val context: Context) {
     val rootfsDir: File = File(context.filesDir, "rootfs")
     val dataDir: File = File(context.filesDir, "data")
     val workspaceDir: File = File(context.filesDir, "workspace")
-    val prootBinary: File = File(context.filesDir, "proot")
+    val prootBinary: File
+        get() = ProotInstaller(context).getExecutableProot()
 
     private val prootInstaller = ProotInstaller(context)
     private val downloader = RootfsDownloader()
@@ -134,8 +135,9 @@ class UbuntuRootfsManager(private val context: Context) {
                     pb.directory(context.filesDir)
                     pb.environment()["HOME"] = "/root"
                     pb.environment()["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-                    pb.environment()["PROOT_LOADER"] = File(context.filesDir, "libloader.so").absolutePath
-                    pb.environment()["PROOT_LOADER_32"] = File(context.filesDir, "libloader_m32.so").absolutePath
+                    pb.environment()["PROOT_LOADER"] = prootInstaller.getLoaderPath()
+                    pb.environment()["PROOT_LOADER_32"] = prootInstaller.getLoader32Path()
+                    pb.environment()["PROOT_NO_SECCOMP"] = "1"
                     pb.redirectErrorStream(true)
                     val proc = pb.start()
                     val reader = proc.inputStream.bufferedReader()

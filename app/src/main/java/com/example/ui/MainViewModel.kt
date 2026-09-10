@@ -592,14 +592,16 @@ class MainViewModel(
                 
                 // Set PROOT_LOADER paths in the interactive environment
                 val context = getApplication<Application>().applicationContext
-                env["PROOT_LOADER"] = File(context.filesDir, "libloader.so").absolutePath
-                env["PROOT_LOADER_32"] = File(context.filesDir, "libloader_m32.so").absolutePath
+                val installer = com.example.core.ProotInstaller(context)
+                env["PROOT_LOADER"] = installer.getLoaderPath()
+                env["PROOT_LOADER_32"] = installer.getLoader32Path()
+                env["PROOT_NO_SECCOMP"] = "1"
                 
-                val cmdList = if (ubuntuRootfsManager.isEnvironmentReady()) {
+                val cmdList = if (ubuntuRootfsManager.isBootstrapReady()) {
                     val rootfsDir = ubuntuRootfsManager.rootfsDir
                     val dataDir = ubuntuRootfsManager.dataDir
                     val workspaceDir = File(context.filesDir, "workspace")
-                    val proot = File(context.filesDir, "proot").absolutePath
+                    val proot = installer.getExecutableProot().absolutePath
                     val rootfs = rootfsDir.absolutePath
                     val data = dataDir.absolutePath
                     
@@ -652,7 +654,7 @@ class MainViewModel(
                 }
 
                 val pb = ProcessBuilder(cmdList)
-                pb.directory(File(linuxEnvManager.HOME))
+                pb.directory(context.filesDir)
                 pb.environment().putAll(env)
                 pb.redirectErrorStream(true)
 

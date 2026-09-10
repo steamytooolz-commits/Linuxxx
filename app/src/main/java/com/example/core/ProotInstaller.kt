@@ -15,8 +15,42 @@ class ProotInstaller(private val context: Context) {
 
     val prootBinary: File = File(context.filesDir, "proot")
 
+    fun getExecutableProot(): File {
+        val nativeLib = File(context.applicationInfo.nativeLibraryDir, "libproot.so")
+        if (nativeLib.exists() && nativeLib.canExecute()) {
+            return nativeLib
+        }
+        val parentLib = File(context.filesDir.parentFile, "lib/libproot.so")
+        if (parentLib.exists() && parentLib.canExecute()) {
+            return parentLib
+        }
+        return prootBinary
+    }
+
+    fun getLoaderPath(): String {
+        val nativeLibDir = File(context.applicationInfo.nativeLibraryDir)
+        val l1 = File(nativeLibDir, "libloader.so")
+        if (l1.exists()) return l1.absolutePath
+        val parentLib = File(context.filesDir.parentFile, "lib/libloader.so")
+        if (parentLib.exists()) return parentLib.absolutePath
+        val f1 = File(context.filesDir, "libloader.so")
+        if (f1.exists()) return f1.absolutePath
+        return l1.absolutePath
+    }
+
+    fun getLoader32Path(): String {
+        val nativeLibDir = File(context.applicationInfo.nativeLibraryDir)
+        val l2 = File(nativeLibDir, "libloader_m32.so")
+        if (l2.exists()) return l2.absolutePath
+        val parentLib = File(context.filesDir.parentFile, "lib/libloader_m32.so")
+        if (parentLib.exists()) return parentLib.absolutePath
+        val f2 = File(context.filesDir, "libloader_m32.so")
+        if (f2.exists()) return f2.absolutePath
+        return l2.absolutePath
+    }
+
     fun isInstalled(): Boolean {
-        return prootBinary.exists() && prootBinary.canExecute()
+        return getExecutableProot().exists() && getExecutableProot().canExecute()
     }
 
     fun install(): Result<File> {
@@ -30,91 +64,110 @@ class ProotInstaller(private val context: Context) {
             checkedPaths.add(sourceSo.absolutePath)
 
             if (sourceSo.exists() && sourceSo.length() > 0) {
-                sourceSo.copyTo(prootBinary, overwrite = true)
-                // Also copy loaders
-                val loader1 = File(nativeLibDir, "libloader.so")
-                if (loader1.exists()) loader1.copyTo(File(context.filesDir, "libloader.so"), overwrite = true)
-                val loader2 = File(nativeLibDir, "libloader_m32.so")
-                if (loader2.exists()) loader2.copyTo(File(context.filesDir, "libloader_m32.so"), overwrite = true)
-                
-                resolvedSource = "nativeLibraryDir (${sourceSo.absolutePath})"
-                Log.i(tag, "Extracted proot from $resolvedSource")
-            } else {
+                // If it can be executed directly (API 29+ requirement), we use it directly!
+                if (sourceSo.canExecute()) {
+                    resolvedSource = "nativeLibraryDir direct (${sourceSo.absolutePath})"
+                    Log.i(tag, "Using executable proot directly from $resolvedSource")
+                    return Result.success(sourceSo)
+                }
+                // Fallback copy for compatibility
+                try {
+                    sourceSo.copyTo(prootBinary, overwrite = true)
+                    prootBinary.setReadable(true, false)
+                    prootBinary.setExecutable(true, false)
+                    val loader1 = File(nativeLibDir, "libloader.so")
+                    if (loader1.exists()) loader1.copyTo(File(context.filesDir, "libloader.so"), overwrite = true)
+                    val loader2 = File(nativeLibDir, "libloader_m32.so")
+                    if (loader2.exists()) loader2.copyTo(File(context.filesDir, "libloader_m32.so"), overwrite = true)
+                    resolvedSource = "extracted nativeLibraryDir to filesDir"
+                } catch (e: Exception) {
+                    Log.w(tag, "Failed fallback copy from nativeLibDir: ${e.message}")
+                }
+            }
+
+            if (resolvedSource == null) {
                 // Source 2: Parent ABI lib directory
                 val abiDir = File(context.filesDir.parentFile, "lib")
                 val altSo = File(abiDir, "libproot.so")
                 checkedPaths.add(altSo.absolutePath)
 
                 if (altSo.exists() && altSo.length() > 0) {
-                    altSo.copyTo(prootBinary, overwrite = true)
-                    // Also copy loaders
-                    val loader1 = File(abiDir, "libloader.so")
-                    if (loader1.exists()) loader1.copyTo(File(context.filesDir, "libloader.so"), overwrite = true)
-                    val loader2 = File(abiDir, "libloader_m32.so")
-                    if (loader2.exists()) loader2.copyTo(File(context.filesDir, "libloader_m32.so"), overwrite = true)
+                    if (altSo.canExecute()) {
+                        resolvedSource = "parentLibDir direct (${altSo.absolutePath})"
+                        Log.i(tag, "Using executable proot directly from $resolvedSource")
+                        return Result.success(altSo)
+                    }
+                    try {
+                        altSo.copyTo(prootBinary, overwrite = true)
+                        prootBinary.setReadable(true, false)
+                        prootBinary.setExecutable(true, false)
+                        val loader1 = File(abiDir, "libloader.so")
+                        if (loader1.exists()) loader1.copyTo(File(context.filesDir, "libloader.so"), overwrite = true)
+                        val loader2 = File(abiDir, "libloader_m32.so")
+                        if (loader2.exists()) loader2.copyTo(File(context.filesDir, "libloader_m32.so"), overwrite = true)
+                        resolvedSource = "extracted parentLibDir to filesDir"
+                    } catch (e: Exception) {
+                        Log.w(tag, "Failed fallback copy from parentLibDir: ${e.message}")
+                    }
+                }
+            }
 
-                    resolvedSource = "parentLibDir (${altSo.absolutePath})"
-                    Log.i(tag, "Extracted proot from $resolvedSource")
-                } else {
-                    // Source 3: Manual self-extraction from currently running APK ZIP file (High Reliability)
-                    val apkPath = context.packageCodePath
-                    if (apkPath != null) {
-                        checkedPaths.add("APK:$apkPath")
-                        try {
-                            java.util.zip.ZipFile(File(apkPath)).use { zip ->
-                                val entry = zip.getEntry("lib/arm64-v8a/libproot.so")
-                                    ?: zip.getEntry("lib/arm64/libproot.so")
-                                if (entry != null) {
-                                    zip.getInputStream(entry).use { input ->
-                                        FileOutputStream(prootBinary).use { output ->
+            if (resolvedSource == null) {
+                // Source 3: Manual self-extraction from currently running APK ZIP file
+                val apkPath = context.packageCodePath
+                if (apkPath != null) {
+                    checkedPaths.add("APK:$apkPath")
+                    try {
+                        java.util.zip.ZipFile(File(apkPath)).use { zip ->
+                            val entry = zip.getEntry("lib/arm64-v8a/libproot.so")
+                                ?: zip.getEntry("lib/arm64/libproot.so")
+                            if (entry != null) {
+                                zip.getInputStream(entry).use { input ->
+                                    FileOutputStream(prootBinary).use { output ->
+                                        input.copyTo(output)
+                                    }
+                                }
+                                val l1 = zip.getEntry("lib/arm64-v8a/libloader.so") ?: zip.getEntry("lib/arm64/libloader.so")
+                                if (l1 != null) {
+                                    zip.getInputStream(l1).use { input ->
+                                        FileOutputStream(File(context.filesDir, "libloader.so")).use { output ->
                                             input.copyTo(output)
                                         }
                                     }
-                                    // Extract companions
-                                    val l1 = zip.getEntry("lib/arm64-v8a/libloader.so") ?: zip.getEntry("lib/arm64/libloader.so")
-                                    if (l1 != null) {
-                                        zip.getInputStream(l1).use { input ->
-                                            FileOutputStream(File(context.filesDir, "libloader.so")).use { output ->
-                                                input.copyTo(output)
-                                            }
-                                        }
-                                    }
-                                    val l2 = zip.getEntry("lib/arm64-v8a/libloader_m32.so") ?: zip.getEntry("lib/arm64/libloader_m32.so")
-                                    if (l2 != null) {
-                                        zip.getInputStream(l2).use { input ->
-                                            FileOutputStream(File(context.filesDir, "libloader_m32.so")).use { output ->
-                                                input.copyTo(output)
-                                            }
-                                        }
-                                    }
-                                    resolvedSource = "APK self-extraction"
-                                    Log.i(tag, "Extracted proot from APK self-extraction!")
                                 }
+                                val l2 = zip.getEntry("lib/arm64-v8a/libloader_m32.so") ?: zip.getEntry("lib/arm64/libloader_m32.so")
+                                if (l2 != null) {
+                                    zip.getInputStream(l2).use { input ->
+                                        FileOutputStream(File(context.filesDir, "libloader_m32.so")).use { output ->
+                                            input.copyTo(output)
+                                        }
+                                    }
+                                }
+                                resolvedSource = "APK self-extraction"
+                                Log.i(tag, "Extracted proot from APK self-extraction!")
                             }
-                        } catch (zipEx: Exception) {
-                            Log.w(tag, "Self-extraction from APK failed: ${zipEx.message}")
                         }
+                    } catch (zipEx: Exception) {
+                        Log.w(tag, "Self-extraction from APK failed: ${zipEx.message}")
                     }
+                }
+            }
 
-                    if (resolvedSource == null) {
-                        // Source 4: Assets fallback
-                        checkedPaths.add("assets/libproot.so")
-                        try {
-                            context.assets.open("libproot.so").use { input ->
-                                FileOutputStream(prootBinary).use { output ->
-                                    input.copyTo(output)
-                                }
-                            }
-                            if (prootBinary.exists() && prootBinary.length() > 0) {
-                                resolvedSource = "assets/libproot.so"
-                                Log.i(tag, "Extracted proot from $resolvedSource")
-                            }
-                        } catch (assetEx: Exception) {
-                            val assetWarn = "Asset libproot.so not found: ${assetEx.message}"
-                            Log.w(tag, assetWarn, assetEx)
-                            checkedPaths.add("assets/libproot.so (failed: ${assetEx.message})")
+            if (resolvedSource == null) {
+                // Source 4: Assets fallback
+                checkedPaths.add("assets/libproot.so")
+                try {
+                    context.assets.open("libproot.so").use { input ->
+                        FileOutputStream(prootBinary).use { output ->
+                            input.copyTo(output)
                         }
                     }
+                    if (prootBinary.exists() && prootBinary.length() > 0) {
+                        resolvedSource = "assets/libproot.so"
+                        Log.i(tag, "Extracted proot from $resolvedSource")
+                    }
+                } catch (assetEx: Exception) {
+                    Log.w(tag, "Asset libproot.so not found: ${assetEx.message}")
                 }
             }
 
@@ -124,35 +177,32 @@ class ProotInstaller(private val context: Context) {
                 if (downloaded) {
                     resolvedSource = "network download fallback"
                 } else {
-                    val errorMsg = "Proot binary source could not be found locally or via download. Checked locations: ${checkedPaths.joinToString("; ")}. Ensure native ARM64 library or asset is packaged or internet is available."
+                    val errorMsg = "Proot binary source could not be found locally or via download. Checked locations: ${checkedPaths.joinToString("; ")}"
                     Log.e(tag, errorMsg)
                     return Result.failure(IllegalStateException(errorMsg))
                 }
             }
 
-            // Apply read and execute permissions for userland
-            prootBinary.setReadable(true, false)
-            prootBinary.setExecutable(true, false)
-
-            try {
-                val chmodExit = Runtime.getRuntime().exec(arrayOf("chmod", "755", prootBinary.absolutePath)).waitFor()
-                if (chmodExit != 0) {
-                    Log.w(tag, "chmod 755 exited with code $chmodExit for ${prootBinary.absolutePath}")
-                }
-            } catch (e: Exception) {
-                Log.w(tag, "chmod 755 execution error: ${e.message}")
+            // Apply executable permissions for fallback target
+            if (prootBinary.exists()) {
+                prootBinary.setReadable(true, false)
+                prootBinary.setExecutable(true, false)
+                try {
+                    Runtime.getRuntime().exec(arrayOf("chmod", "755", prootBinary.absolutePath)).waitFor()
+                } catch (ignored: Exception) {}
             }
 
-            if (prootBinary.exists() && prootBinary.canExecute()) {
-                Log.i(tag, "PRoot binary verified successfully from source '$resolvedSource' at: ${prootBinary.absolutePath} (size: ${prootBinary.length()} bytes)")
-                return Result.success(prootBinary)
+            val executableFile = getExecutableProot()
+            if (executableFile.exists() && executableFile.canExecute()) {
+                Log.i(tag, "PRoot binary verified successfully from source '$resolvedSource' at: ${executableFile.absolutePath}")
+                return Result.success(executableFile)
             } else {
-                val errorDetails = "PRoot binary exists=${prootBinary.exists()} canExecute=${prootBinary.canExecute()} size=${if (prootBinary.exists()) prootBinary.length() else 0} bytes from source '$resolvedSource'. Checked: [${checkedPaths.joinToString(", ")}]"
+                val errorDetails = "PRoot binary exists=${executableFile.exists()} canExecute=${executableFile.canExecute()} path=${executableFile.absolutePath}"
                 Log.e(tag, errorDetails)
                 return Result.failure(IllegalStateException(errorDetails))
             }
         } catch (e: Exception) {
-            val fullError = "Failed to install PRoot binary. Checked paths: [${checkedPaths.joinToString(", ")}]. Cause: ${e.message}"
+            val fullError = "Failed to install PRoot binary. Cause: ${e.message}"
             Log.e(tag, fullError, e)
             return Result.failure(IllegalStateException(fullError, e))
         }

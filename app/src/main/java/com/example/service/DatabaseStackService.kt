@@ -188,8 +188,10 @@ class DatabaseStackService : Service() {
                     pb.directory(filesDir)
                     pb.environment()["HOME"] = "/root"
                     pb.environment()["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-                    pb.environment()["PROOT_LOADER"] = java.io.File(filesDir, "libloader.so").absolutePath
-                    pb.environment()["PROOT_LOADER_32"] = java.io.File(filesDir, "libloader_m32.so").absolutePath
+                    val installer = com.example.core.ProotInstaller(this@DatabaseStackService)
+                    pb.environment()["PROOT_LOADER"] = installer.getLoaderPath()
+                    pb.environment()["PROOT_LOADER_32"] = installer.getLoader32Path()
+                    pb.environment()["PROOT_NO_SECCOMP"] = "1"
                     pb.environment()["MARIADB_ROOT_PASSWORD"] = password
                     pb.redirectErrorStream(true)
 

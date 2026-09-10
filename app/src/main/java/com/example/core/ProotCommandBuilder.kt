@@ -13,7 +13,7 @@ class ProotCommandBuilder(private val context: Context) {
         dataDir: File,
         workspaceDir: File
     ): List<String> {
-        val proot = File(context.filesDir, "proot").absolutePath
+        val proot = ProotInstaller(context).getExecutableProot().absolutePath
         val rootfs = rootfsDir.absolutePath
         val data = dataDir.absolutePath
 
@@ -39,7 +39,7 @@ class ProotCommandBuilder(private val context: Context) {
         rootfsDir: File,
         dataDir: File
     ): List<String> {
-        val proot = File(context.filesDir, "proot").absolutePath
+        val proot = ProotInstaller(context).getExecutableProot().absolutePath
         val rootfs = rootfsDir.absolutePath
         val data = dataDir.absolutePath
 
