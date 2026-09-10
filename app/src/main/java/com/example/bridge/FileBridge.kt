@@ -116,6 +116,16 @@ open class FileBridge(
             ""
         }
 
+        if (password.isBlank()) {
+            return gson.toJson(
+                mapOf(
+                    "status" to "error",
+                    "database" to "mariadb",
+                    "error" to "Security error: MariaDB root password is empty or not initialized. Connection refused."
+                )
+            )
+        }
+
         return try {
             val url = "jdbc:mariadb://127.0.0.1:3306/?connectTimeout=3000&socketTimeout=5000"
             val conn = DriverManager.getConnection(url, "root", password)
