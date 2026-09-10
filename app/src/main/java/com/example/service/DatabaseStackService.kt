@@ -14,14 +14,13 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.example.LinuxStackApp
 import com.example.MainActivity
-import com.example.R
+import com.example.core.DatabaseSecurityManager
 import com.example.core.UbuntuRootfsManager
 import com.example.data.repository.DatabaseRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -34,13 +33,13 @@ import kotlinx.coroutines.launch
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.InetSocketAddress
-import java.net.ServerSocket
 import java.net.Socket
-import java.util.concurrent.ConcurrentHashMap
+import kotlin.math.min
 
 /**
  * Android Foreground Service hosting the Linux database stack (MariaDB, Redis, MongoDB)
  * inside a rootless ARM64 PRoot container.
+ * Supervised with an active watchdog coroutine providing automatic restarts and backoff.
  */
 class DatabaseStackService : Service() {
 
@@ -92,18 +91,21 @@ class DatabaseStackService : Service() {
 
     private var wakeLock: PowerManager.WakeLock? = null
     private var prootProcess: Process? = null
+    private var prootSupervisorJob: Job? = null
+    private var portMonitorJob: Job? = null
 
     private lateinit var dbRepository: DatabaseRepository
     private lateinit var rootfsManager: UbuntuRootfsManager
-    private var portMonitorJob: Job? = null
+    private lateinit var dbSecurity: DatabaseSecurityManager
 
     override fun onCreate() {
         super.onCreate()
         val app = application as LinuxStackApp
         dbRepository = app.appContainer.databaseRepository
         rootfsManager = UbuntuRootfsManager(this)
+        dbSecurity = DatabaseSecurityManager.getInstance(this)
 
-        // Acquire PARTIAL_WAKE_LOCK as required in Section 8
+        // Acquire PARTIAL_WAKE_LOCK to prevent CPU sleep during long-running background service
         try {
             val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
             wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Linuxxx:DatabaseStackWakeLock").apply {
@@ -154,7 +156,7 @@ class DatabaseStackService : Service() {
             emitLog("SERVICE", "Starting Linuxxx Database Appliance foreground stack...", false)
 
             if (rootfsManager.isEnvironmentReady()) {
-                launchProotStack()
+                startSupervisedProotWatchdog()
             } else {
                 emitLog("PROOT", "Rootfs environment is not fully ready. Complete first-launch setup.", true)
             }
@@ -165,32 +167,68 @@ class DatabaseStackService : Service() {
         return START_STICKY
     }
 
-    private fun launchProotStack() {
-        try {
-            rootfsManager.workspaceDir.mkdirs()
-            val cmd = rootfsManager.buildProotCommand()
-            emitLog("PROOT", "Executing: ${cmd.joinToString(" ")}", false)
+    /**
+     * Starts the PRoot process watchdog. If the process dies unexpectedly,
+     * logs the exit status and restarts with exponential backoff.
+     */
+    private fun startSupervisedProotWatchdog() {
+        prootSupervisorJob?.cancel()
+        prootSupervisorJob = serviceScope.launch {
+            var restartDelay = 1000L
+            val maxRestartDelay = 30000L
 
-            val pb = ProcessBuilder(cmd)
-            pb.directory(filesDir)
-            pb.environment()["HOME"] = "/root"
-            pb.environment()["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-            pb.redirectErrorStream(true)
+            while (isActive) {
+                try {
+                    rootfsManager.workspaceDir.mkdirs()
+                    val cmd = rootfsManager.buildProotCommand()
+                    val password = dbSecurity.getOrCreateMariaDbPassword()
+                    emitLog("PROOT", "Launching proot supervisor: ${cmd.joinToString(" ")}", false)
 
-            val proc = pb.start()
-            prootProcess = proc
+                    val pb = ProcessBuilder(cmd)
+                    pb.directory(filesDir)
+                    pb.environment()["HOME"] = "/root"
+                    pb.environment()["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+                    pb.environment()["MARIADB_ROOT_PASSWORD"] = password
+                    pb.redirectErrorStream(true)
 
-            serviceScope.launch {
-                val reader = BufferedReader(InputStreamReader(proc.inputStream))
-                var line: String? = reader.readLine()
-                while (line != null && isActive) {
-                    emitLog("CONTAINER", line, isError = line.contains("ERROR", ignoreCase = true) || line.contains("FAIL", ignoreCase = true))
-                    line = reader.readLine()
+                    val proc = pb.start()
+                    prootProcess = proc
+
+                    // Stream stdout / stderr output asynchronously
+                    val readerJob = launch {
+                        try {
+                            val reader = BufferedReader(InputStreamReader(proc.inputStream))
+                            var line: String? = reader.readLine()
+                            while (line != null && isActive) {
+                                val isErr = line.contains("ERROR", ignoreCase = true) || line.contains("FAIL", ignoreCase = true)
+                                emitLog("CONTAINER", line, isError = isErr)
+                                line = reader.readLine()
+                            }
+                        } catch (ioEx: Exception) {
+                            Log.d(TAG, "Container stream closed: ${ioEx.message}")
+                        }
+                    }
+
+                    // Watchdog: block until container process terminates
+                    val exitCode = proc.waitFor()
+                    readerJob.cancel()
+                    prootProcess = null
+
+                    if (!isActive) {
+                        emitLog("PROOT", "Proot container stopped cleanly (service destroyed).", false)
+                        break
+                    }
+
+                    emitLog("WATCHDOG", "PRoot process exited unexpectedly with code $exitCode. Restarting in ${restartDelay / 1000}s...", isError = true)
+                    delay(restartDelay)
+                    restartDelay = min(restartDelay * 2, maxRestartDelay)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to spawn proot container", e)
+                    emitLog("PROOT", "Container launch failure: ${e.message}", true)
+                    delay(restartDelay)
+                    restartDelay = min(restartDelay * 2, maxRestartDelay)
                 }
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to spawn proot container", e)
-            emitLog("PROOT", "Container launch failure: ${e.message}", true)
         }
     }
 
@@ -224,7 +262,11 @@ class DatabaseStackService : Service() {
         val msg = LogMessage(tag = tag, text = text, isError = isError)
         _logStream.tryEmit(msg)
         serviceScope.launch {
-            dbRepository.log(tag, text, if (isError) "ERROR" else "INFO")
+            try {
+                dbRepository.log(tag, text, if (isError) "ERROR" else "INFO")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to persist log to repository: ${e.message}", e)
+            }
         }
     }
 
@@ -246,6 +288,7 @@ class DatabaseStackService : Service() {
     override fun onDestroy() {
         _isRunning.value = false
         portMonitorJob?.cancel()
+        prootSupervisorJob?.cancel()
 
         try {
             prootProcess?.destroy()
@@ -262,7 +305,7 @@ class DatabaseStackService : Service() {
             }
         }
 
-        serviceScope.cancel()
+        serviceJob.cancel()
         super.onDestroy()
     }
 

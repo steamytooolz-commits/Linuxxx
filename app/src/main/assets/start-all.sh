@@ -9,7 +9,9 @@ mkdir -p /var/log/mysql /var/log/redis /var/log/mongodb
 chown -R root:root /var/lib/mysql /var/lib/redis /var/lib/mongodb 2>/dev/null || true
 
 # Initialize MariaDB data directory if first run
+FIRST_RUN_MARIADB=0
 if [ ! -d /var/lib/mysql/mysql ]; then
+    FIRST_RUN_MARIADB=1
     echo "[start-all.sh] Bootstrapping MariaDB system tables..."
     mariadb-install-db --user=root --datadir=/var/lib/mysql 2>/dev/null || mysql_install_db --user=root --datadir=/var/lib/mysql 2>/dev/null || true
 fi
@@ -19,6 +21,25 @@ echo "[start-all.sh] Starting MariaDB on port 3306..."
 mysqld_safe --datadir=/var/lib/mysql \
   --socket=/var/run/mysqld/mysqld.sock \
   --port=3306 --bind-address=127.0.0.1 &
+MARIADB_PID=$!
+
+# Secure root user password on first run or when MARIADB_ROOT_PASSWORD is provided
+(
+  if [ -n "$MARIADB_ROOT_PASSWORD" ]; then
+    echo "[start-all.sh] Waiting for MariaDB socket to secure root user..."
+    for i in $(seq 1 30); do
+      if [ -S /var/run/mysqld/mysqld.sock ] || mysqladmin ping --socket=/var/run/mysqld/mysqld.sock --silent 2>/dev/null; then
+        echo "[start-all.sh] MariaDB socket is ready. Securing root account..."
+        # Set root password for 127.0.0.1 and localhost
+        mariadb -u root --socket=/var/run/mysqld/mysqld.sock -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '$MARIADB_ROOT_PASSWORD'; ALTER USER 'root'@'127.0.0.1' IDENTIFIED BY '$MARIADB_ROOT_PASSWORD'; FLUSH PRIVILEGES;" 2>/dev/null || \
+        mysql -u root --socket=/var/run/mysqld/mysqld.sock -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '$MARIADB_ROOT_PASSWORD'; ALTER USER 'root'@'127.0.0.1' IDENTIFIED BY '$MARIADB_ROOT_PASSWORD'; FLUSH PRIVILEGES;" 2>/dev/null || true
+        echo "[start-all.sh] MariaDB root user secured."
+        break
+      fi
+      sleep 1
+    done
+  fi
+) &
 
 # Start Redis 7.x
 echo "[start-all.sh] Starting Redis on port 6379..."

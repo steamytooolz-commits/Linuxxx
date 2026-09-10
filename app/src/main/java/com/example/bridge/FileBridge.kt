@@ -1,6 +1,8 @@
 package com.example.bridge
 
+import android.content.Context
 import android.webkit.JavascriptInterface
+import com.example.core.DatabaseSecurityManager
 import com.google.gson.Gson
 import com.mongodb.client.MongoClients
 import org.bson.Document
@@ -12,9 +14,11 @@ import java.sql.DriverManager
  * Native JavaScript interface exposed to CodeMirror 6 inside the WebView.
  * Handles file management (read, write, list, delete) and direct query execution
  * against MariaDB (3306), Redis (6379), and MongoDB (27017).
+ * Connects securely to MariaDB using the authenticated root password.
  */
 open class FileBridge(
     private val root: File,
+    private val context: Context? = null,
     private val onLog: (String) -> Unit = {}
 ) {
 
@@ -106,10 +110,27 @@ open class FileBridge(
     }
 
     private fun executeMariaDbQuery(query: String): String {
+        val password = if (context != null) {
+            DatabaseSecurityManager.getInstance(context).getMariaDbPassword()
+        } else {
+            ""
+        }
+
         return try {
             val url = "jdbc:mariadb://127.0.0.1:3306/?connectTimeout=3000&socketTimeout=5000"
-            DriverManager.getConnection(url, "root", "").use { conn ->
-                conn.createStatement().use { stmt ->
+            // Try connecting with stored password, then fallback to blank if password hasn't taken effect yet
+            val conn = try {
+                DriverManager.getConnection(url, "root", password)
+            } catch (authEx: Exception) {
+                if (password.isNotEmpty()) {
+                    DriverManager.getConnection(url, "root", "")
+                } else {
+                    throw authEx
+                }
+            }
+
+            conn.use { c ->
+                c.createStatement().use { stmt ->
                     val hasResultSet = stmt.execute(query)
                     if (hasResultSet) {
                         val rs = stmt.resultSet

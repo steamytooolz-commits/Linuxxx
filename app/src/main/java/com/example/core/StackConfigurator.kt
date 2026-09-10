@@ -73,26 +73,8 @@ class StackConfigurator(private val context: Context) {
                 copyAssetToFile("config/$asset", destFile)
             }
 
-            // 6. Provide a default init.sql in workspace if absent
-            val initSql = File(workspaceDir, "init.sql")
-            if (!initSql.exists()) {
-                val defaultSql = """
-                    -- Linuxxx MariaDB 11.x Initialization
-                    CREATE DATABASE IF NOT EXISTS appdb;
-                    USE appdb;
-                    CREATE TABLE IF NOT EXISTS users (
-                        id INT AUTO_INCREMENT PRIMARY KEY,
-                        username VARCHAR(50) NOT NULL,
-                        email VARCHAR(100),
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    );
-                    INSERT INTO users (username, email) VALUES
-                        ('admin', 'admin@localhost'),
-                        ('developer', 'dev@linuxxx.internal');
-                    SELECT * FROM users;
-                """.trimIndent()
-                initSql.writeText(defaultSql)
-            }
+            // Note: init.sql is now exclusively managed by bridge.js (DEFAULT_FILES)
+            // preventing dual source-of-truth drift.
 
             true
         } catch (e: Exception) {

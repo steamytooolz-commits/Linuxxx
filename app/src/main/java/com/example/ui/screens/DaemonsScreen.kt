@@ -59,6 +59,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material.icons.filled.Lock
+import com.example.core.DatabaseSecurityManager
 import com.example.ui.MainUiState
 import com.example.ui.components.DatabaseDaemonTable
 
@@ -71,6 +74,9 @@ fun DaemonsScreen(
     modifier: Modifier = Modifier
 ) {
     val isDark = uiState.isDarkMode
+    val context = LocalContext.current
+    val dbSecurity = remember { DatabaseSecurityManager.getInstance(context) }
+    val mariaDbPassword = remember { dbSecurity.getOrCreateMariaDbPassword() }
 
     Column(
         modifier = modifier
@@ -208,6 +214,75 @@ fun DaemonsScreen(
             onProbeClick = onProbePorts
         )
 
+        // Security & Connection Credentials Card
+        Card(
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = if (isDark) Color(0xFF0F172A) else Color(0xFFFFFFFF)
+            ),
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp,
+                if (isDark) Color(0xFF1E293B) else Color(0xFFE2E8F0)
+            ),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Lock,
+                            contentDescription = null,
+                            tint = Color(0xFF10B981),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "SECURITY CREDENTIALS (127.0.0.1)",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            fontFamily = FontFamily.Monospace,
+                            color = if (isDark) Color(0xFFF1F5F9) else Color(0xFF0F172A)
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(Color(0x1A10B981))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = "SECURED",
+                            color = Color(0xFF10B981),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Text(
+                    text = "MariaDB Root: root | Password: $mariaDbPassword",
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (isDark) Color(0xFF38BDF8) else Color(0xFF0284C7)
+                )
+                Text(
+                    text = "Redis: Protected loopback (no auth) | MongoDB: admin (unrestricted localhost)",
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 10.sp,
+                    color = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
+                )
+            }
+        }
+
         // Individual Daemon Command Triggers
         Text(
             text = "INDIVIDUAL DAEMON CLI CONTROLS",
@@ -225,7 +300,7 @@ fun DaemonsScreen(
                 startCmd = "mysqld_safe --datadir=\$MYSQL_DATA_DIR --port=3306 --innodb_buffer_pool_size=${uiState.innodbBufferPoolMb}M &",
                 stopCmd = "pkill mysqld",
                 restartCmd = "pkill mysqld; sleep 1; mysqld_safe --datadir=\$MYSQL_DATA_DIR --port=3306 --innodb_buffer_pool_size=${uiState.innodbBufferPoolMb}M &",
-                checkCmd = "mysqladmin ping -u root"
+                checkCmd = "mysqladmin ping -u root -p$mariaDbPassword 2>/dev/null || mysqladmin ping -u root"
             ),
             DaemonControlItem(
                 name = "Redis In-Memory",

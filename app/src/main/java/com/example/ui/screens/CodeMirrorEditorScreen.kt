@@ -56,7 +56,7 @@ fun CodeMirrorEditorScreen(
                     }
 
                     // Expose AndroidFileBridge to JS as required in Section 9.2
-                    addJavascriptInterface(FileBridge(workspaceDir), "AndroidFileBridge")
+                    addJavascriptInterface(FileBridge(workspaceDir, ctx), "AndroidFileBridge")
 
                     webViewClient = WebViewClient()
                     webChromeClient = WebChromeClient()
