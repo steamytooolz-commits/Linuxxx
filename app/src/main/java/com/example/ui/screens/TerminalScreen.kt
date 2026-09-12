@@ -70,10 +70,19 @@ fun TerminalScreen(
     modifier: Modifier = Modifier
 ) {
     val isDark = uiState.isDarkMode
-    val terminalLogs = uiState.logs.filter { it.tag in listOf("IN", "OUT", "SHELL", "SHELL-ERR") }
+    val terminalLogs = uiState.logs.filter {
+        it.tag in listOf("IN", "OUT", "SHELL", "SHELL-ERR", "CLI", "CLI-ERR", "APPLIANCE", "SERVICE", "PROOT", "CONTAINER", "REDIS", "MARIADB", "MONGODB")
+    }
     val lazyListState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     var cmdInput by remember { mutableStateOf("") }
+
+    // Auto-start shell if not active
+    LaunchedEffect(Unit) {
+        if (!uiState.isInteractiveSessionActive) {
+            onStartInteractiveShell("")
+        }
+    }
 
     // Auto-scroll logic
     LaunchedEffect(terminalLogs.size) {
@@ -282,8 +291,13 @@ fun TerminalScreen(
                         items(terminalLogs, key = { it.id }) { logItem ->
                             val defaultColor = when (logItem.tag) {
                                 "IN" -> Color(0xFF38BDF8)
-                                "SHELL-ERR" -> Color(0xFFEF4444)
+                                "SHELL-ERR", "CLI-ERR" -> Color(0xFFEF4444)
                                 "SHELL" -> Color(0xFF10B981)
+                                "CLI" -> Color(0xFF60A5FA)
+                                "APPLIANCE", "SERVICE" -> Color(0xFFA855F7)
+                                "MARIADB" -> Color(0xFFF59E0B)
+                                "REDIS" -> Color(0xFFEF4444)
+                                "MONGODB" -> Color(0xFF22C55E)
                                 else -> Color(0xFFE2E8F0)
                             }
                             val annotatedText = AnsiColorParser.parseAnsiToAnnotatedString(
@@ -299,6 +313,42 @@ fun TerminalScreen(
                             )
                         }
                     }
+                }
+            }
+        }
+
+        // Quick Action Command Chips
+        androidx.compose.foundation.lazy.LazyRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            val quickCmds = listOf(
+                "status",
+                "redis-cli PING",
+                "redis-cli KEYS *",
+                "mariadb -e \"SHOW TABLES;\"",
+                "mariadb -e \"SELECT * FROM users;\"",
+                "mongosh",
+                "seed",
+                "ps",
+                "ls -la",
+                "help"
+            )
+            items(quickCmds) { qCmd ->
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (isDark) Color(0xFF1E293B) else Color(0xFFE2E8F0))
+                        .clickable { onSendInteractiveInput(qCmd) }
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        text = qCmd,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = if (isDark) Color(0xFF38BDF8) else Color(0xFF0284C7)
+                    )
                 }
             }
         }

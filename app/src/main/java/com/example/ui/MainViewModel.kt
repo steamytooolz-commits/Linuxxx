@@ -58,7 +58,7 @@ data class MainUiState(
     val isServiceRunning: Boolean = false,
     val isExtracted: Boolean = false,
     val isDarkMode: Boolean = true,
-    val currentScreen: AppScreen = AppScreen.SETUP,
+    val currentScreen: AppScreen = AppScreen.STUDIO,
     val extractionProgress: BootstrapExtractor.ExtractionProgress = BootstrapExtractor.ExtractionProgress(),
     val ports: Map<Int, PortInfo> = mapOf(
         3306 to PortInfo(3306, "MariaDB"),
@@ -211,6 +211,16 @@ class MainViewModel(
         _uiState.update { it.copy(isExtracted = alreadyExtracted) }
         if (!alreadyExtracted) {
             extractBootstrap(force = false)
+        }
+
+        // Auto-boot database stack so DBs are up immediately
+        viewModelScope.launch {
+            kotlinx.coroutines.delay(150)
+            try {
+                DatabaseStackService.start(application)
+            } catch (e: Exception) {
+                android.util.Log.w("MainViewModel", "Service auto-start: ${e.message}")
+            }
         }
     }
 
@@ -679,7 +689,7 @@ class MainViewModel(
                         "/system/bin/sh"
                     }
                     if (command.isBlank()) {
-                        listOf(shellBinary, "-i")
+                        listOf(shellBinary)
                     } else {
                         listOf(shellBinary, "-c", command)
                     }
@@ -710,7 +720,9 @@ class MainViewModel(
                         activeSessionPid = pid
                     )
                 }
-                appendLog("SHELL", "⚡ Started interactive Linux stream session [$title]")
+                appendLog("SHELL", "⚡ Connected to Linux Console [PID $pid] ($title)")
+                appendLog("OUT", "Linux developer sandbox ready. Type 'help', 'status', 'mariadb', 'redis-cli', 'mongosh' or any bash command.")
+                appendLog("OUT", "ubuntu@localhost:~$ ")
 
                 interactiveReaderJob = viewModelScope.launch(Dispatchers.IO) {
                     try {
@@ -752,20 +764,108 @@ class MainViewModel(
     fun sendInteractiveInput(input: String) {
         val trimmed = input.trim()
         if (trimmed.isEmpty()) return
+        appendLog("IN", "$ $trimmed")
         
         viewModelScope.launch(Dispatchers.IO) {
-            val writer = interactiveWriter
-            val proc = interactiveProcess
-            if (proc != null && proc.isAlive && writer != null) {
-                try {
-                    appendLog("IN", "$ $trimmed")
-                    writer.write(trimmed + "\n")
-                    writer.flush()
-                } catch (e: Exception) {
-                    appendLog("SHELL-ERR", "Failed writing to process stdin: ${e.message}", isError = true)
+            when {
+                trimmed.equals("help", ignoreCase = true) -> {
+                    appendLog("OUT", "Linuxxx Universal Developer Console Commands:")
+                    appendLog("OUT", "  status                 - Show live database daemon port health")
+                    appendLog("OUT", "  redis-cli [cmd]        - Execute Redis command (e.g. redis-cli PING, redis-cli KEYS *)")
+                    appendLog("OUT", "  mariadb / mysql [sql]  - Execute SQL query (e.g. mariadb -e 'SHOW TABLES;')")
+                    appendLog("OUT", "  mongosh [query]        - Execute Mongo query (e.g. mongosh find audit_logs)")
+                    appendLog("OUT", "  seed                   - Seed full-stack sample data across all 3 databases")
+                    appendLog("OUT", "  clear                  - Clear console output")
+                    appendLog("OUT", "  <bash command>         - Execute Linux command (ls, ps, pwd, cat, env, etc.)")
+                    appendLog("OUT", "ubuntu@localhost:~$ ")
                 }
-            } else {
-                executeCommand(trimmed)
+                trimmed.equals("status", ignoreCase = true) -> {
+                    val mOpen = probeSocket(3306).first
+                    val rOpen = probeSocket(6379).first
+                    val mgOpen = probeSocket(27017).first
+                    appendLog("OUT", "DATABASE STACK STATUS:")
+                    appendLog("OUT", "  [3306]  MariaDB 11.4: " + (if (mOpen) "ONLINE (listening)" else "OFFLINE"))
+                    appendLog("OUT", "  [6379]  Redis 7.2   : " + (if (rOpen) "ONLINE (listening)" else "OFFLINE"))
+                    appendLog("OUT", "  [27017] MongoDB 7.0 : " + (if (mgOpen) "ONLINE (listening)" else "OFFLINE"))
+                    appendLog("OUT", "ubuntu@localhost:~$ ")
+                }
+                trimmed.equals("clear", ignoreCase = true) -> {
+                    clearLogs()
+                    appendLog("OUT", "ubuntu@localhost:~$ ")
+                }
+                trimmed.equals("seed", ignoreCase = true) -> {
+                    appendLog("OUT", "Seeding full-stack demo data...")
+                    val result = studioManager.seedFullStackDemo()
+                    if (result.success) {
+                        appendLog("OUT", "✔ Seeded successfully: ${result.mariaDbUsers} users, ${result.mariaDbProducts} products, ${result.redisKeys} Redis keys, ${result.mongoDocuments} Mongo docs (${result.durationMs}ms)")
+                    } else {
+                        appendLog("OUT", "✖ Seed status: ${result.message}")
+                    }
+                    appendLog("OUT", "ubuntu@localhost:~$ ")
+                }
+                trimmed.startsWith("redis-cli", ignoreCase = true) -> {
+                    val redisCmd = trimmed.removePrefix("redis-cli").trim().ifEmpty { "PING" }
+                    val res = studioManager.executeRedisCommand(redisCmd)
+                    if (res.error != null) {
+                        appendLog("SHELL-ERR", "(error) ${res.error}")
+                    } else {
+                        appendLog("OUT", res.output)
+                    }
+                    appendLog("OUT", "ubuntu@localhost:~$ ")
+                }
+                trimmed.startsWith("mariadb", ignoreCase = true) || trimmed.startsWith("mysql", ignoreCase = true) -> {
+                    val sqlCmd = trimmed
+                        .replace("mariadb -e", "", ignoreCase = true)
+                        .replace("mysql -e", "", ignoreCase = true)
+                        .replace("mariadb", "", ignoreCase = true)
+                        .replace("mysql", "", ignoreCase = true)
+                        .trim().trim('"', '\'').ifEmpty { "SHOW TABLES;" }
+                    val res = studioManager.executeSqlQuery(sqlCmd)
+                    if (res.error != null) {
+                        appendLog("SHELL-ERR", "ERROR: ${res.error}")
+                    } else {
+                        if (res.columns.isNotEmpty()) {
+                            appendLog("OUT", res.columns.joinToString(" | "))
+                            appendLog("OUT", "-".repeat(40))
+                            res.rows.take(20).forEach { row ->
+                                appendLog("OUT", res.columns.map { c -> row[c]?.toString() ?: "NULL" }.joinToString(" | "))
+                            }
+                            appendLog("OUT", "(${res.rowCount} rows in set, ${res.durationMs} ms)")
+                        } else {
+                            appendLog("OUT", "Query OK, ${res.affectedRows} row(s) affected (${res.durationMs} ms)")
+                        }
+                    }
+                    appendLog("OUT", "ubuntu@localhost:~$ ")
+                }
+                trimmed.startsWith("mongosh", ignoreCase = true) || trimmed.startsWith("mongo", ignoreCase = true) -> {
+                    val mongoQuery = trimmed
+                        .replace("mongosh --eval", "", ignoreCase = true)
+                        .replace("mongosh", "", ignoreCase = true)
+                        .replace("mongo", "", ignoreCase = true)
+                        .trim().trim('"', '\'').ifEmpty { "db.audit_logs.find()" }
+                    val res = studioManager.executeMongoQuery(queryStr = mongoQuery)
+                    if (res.error != null) {
+                        appendLog("SHELL-ERR", "MongoServerError: ${res.error}")
+                    } else {
+                        appendLog("OUT", res.outputJson)
+                        appendLog("OUT", "(${res.documentCount} documents matched in ${res.durationMs} ms)")
+                    }
+                    appendLog("OUT", "ubuntu@localhost:~$ ")
+                }
+                else -> {
+                    val writer = interactiveWriter
+                    val proc = interactiveProcess
+                    if (proc != null && proc.isAlive && writer != null) {
+                        try {
+                            writer.write(trimmed + "\n")
+                            writer.flush()
+                        } catch (e: Exception) {
+                            appendLog("SHELL-ERR", "Failed writing to process stdin: ${e.message}", isError = true)
+                        }
+                    } else {
+                        executeCommand(trimmed)
+                    }
+                }
             }
         }
     }

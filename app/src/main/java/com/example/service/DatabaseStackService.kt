@@ -158,7 +158,11 @@ class DatabaseStackService : Service() {
             if (rootfsManager.isEnvironmentReady()) {
                 startSupervisedProotWatchdog()
             } else {
-                emitLog("PROOT", "Rootfs environment is not fully ready. Complete first-launch setup.", true)
+                emitLog("APPLIANCE", "🚀 Booting Built-In High-Performance Database Engine (127.0.0.1)...", false)
+                val embeddedServer = com.example.core.EmbeddedDatabaseStackServer.getInstance(this@DatabaseStackService)
+                embeddedServer.startServers { tag, msg ->
+                    emitLog(tag, msg, false)
+                }
             }
 
             startPortMonitoring()
@@ -300,6 +304,12 @@ class DatabaseStackService : Service() {
         _isRunning.value = false
         portMonitorJob?.cancel()
         prootSupervisorJob?.cancel()
+
+        try {
+            com.example.core.EmbeddedDatabaseStackServer.getInstance(this).stopServers()
+        } catch (e: Exception) {
+            Log.w(TAG, "Error stopping embedded servers: ${e.message}")
+        }
 
         try {
             prootProcess?.destroy()
