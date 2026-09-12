@@ -39,9 +39,17 @@ data class TerminalLogItem(
     val isError: Boolean = false
 )
 
+enum class StudioTab(val label: String) {
+    QUERY("Query Console"),
+    BROWSER("Data Browser"),
+    CODEGEN("Polyglot Hub"),
+    SEEDER("1-Click Seeder")
+}
+
 enum class AppScreen(val title: String, val route: String) {
     SETUP("First-Launch Setup", "setup"),
-    CODEMIRROR("CodeMirror 6 Editor", "codemirror"),
+    STUDIO("Dev Studio", "studio"),
+    CODEMIRROR("Code Editor", "codemirror"),
     DAEMONS("Database Daemons", "daemons"),
     TERMINAL("Interactive Terminal", "terminal")
 }
@@ -100,7 +108,26 @@ server.listen(PORT, '127.0.0.1', () => {
     // Interactive Terminal Shell Stream State
     val isInteractiveSessionActive: Boolean = false,
     val activeSessionTitle: String = "none",
-    val activeSessionPid: Long = -1L
+    val activeSessionPid: Long = -1L,
+    // Universal Studio & Explorer State
+    val studioTab: StudioTab = StudioTab.QUERY,
+    val studioEngine: String = "mariadb",
+    val studioSqlQueryInput: String = "SELECT * FROM users LIMIT 10;",
+    val studioRedisCommandInput: String = "KEYS *",
+    val studioMongoQueryInput: String = "find audit_logs",
+    val studioSqlResult: com.example.core.SqlResult = com.example.core.SqlResult(),
+    val studioRedisResult: com.example.core.RedisResult = com.example.core.RedisResult(),
+    val studioMongoResult: com.example.core.MongoResult = com.example.core.MongoResult(),
+    val studioIsLoading: Boolean = false,
+    val studioStatusMessage: String = "",
+    val studioRedisKeys: List<com.example.core.RedisKeyInfo> = emptyList(),
+    val studioSqlTables: List<String> = emptyList(),
+    val studioMongoCollections: List<String> = emptyList(),
+    val studioHealthMap: Map<String, com.example.core.DbHealth> = emptyMap(),
+    val studioBenchmarkResult: com.example.core.BenchmarkResult? = null,
+    val studioSelectedLanguage: String = "nodejs",
+    val studioGeneratedSnippet: String = "",
+    val studioSeedResult: com.example.core.FullStackSeedResult? = null
 )
 
 class MainViewModel(
@@ -120,12 +147,17 @@ class MainViewModel(
     )
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
 
+    private val studioManager = com.example.core.UniversalDatabaseStudioManager(application)
+
     private var portPollingJob: Job? = null
     private var interactiveProcess: Process? = null
     private var interactiveWriter: java.io.BufferedWriter? = null
     private var interactiveReaderJob: Job? = null
 
     init {
+        val initialSnippet = studioManager.generatePolyglotSnippet("nodejs")
+        _uiState.update { it.copy(studioGeneratedSnippet = initialSnippet) }
+        testStudioHealth()
         // Collect service running state from Foreground Service
         viewModelScope.launch {
             DatabaseStackService.isRunning.collect { running ->
@@ -786,6 +818,172 @@ class MainViewModel(
             }
             appendLog("SHELL", "Interactive shell session terminated.")
         } catch (_: Exception) {}
+    }
+
+    // ------------------------------------------------------------------------
+    // UNIVERSAL DEVELOPER STUDIO METHODS
+    // ------------------------------------------------------------------------
+
+    fun setStudioTab(tab: StudioTab) {
+        _uiState.update { it.copy(studioTab = tab) }
+        if (tab == StudioTab.BROWSER) {
+            refreshStudioBrowserData()
+        }
+    }
+
+    fun setStudioEngine(engine: String) {
+        _uiState.update { it.copy(studioEngine = engine) }
+    }
+
+    fun setStudioSqlQuery(query: String) {
+        _uiState.update { it.copy(studioSqlQueryInput = query) }
+    }
+
+    fun setStudioRedisCommand(cmd: String) {
+        _uiState.update { it.copy(studioRedisCommandInput = cmd) }
+    }
+
+    fun setStudioMongoQuery(query: String) {
+        _uiState.update { it.copy(studioMongoQueryInput = query) }
+    }
+
+    fun setStudioLanguage(lang: String) {
+        val snippet = studioManager.generatePolyglotSnippet(lang)
+        _uiState.update { it.copy(studioSelectedLanguage = lang, studioGeneratedSnippet = snippet) }
+    }
+
+    fun executeStudioQuery() {
+        val engine = _uiState.value.studioEngine
+        _uiState.update { it.copy(studioIsLoading = true, studioStatusMessage = "Executing query on $engine...") }
+        viewModelScope.launch {
+            when (engine) {
+                "mariadb" -> {
+                    val res = studioManager.executeSqlQuery(_uiState.value.studioSqlQueryInput)
+                    _uiState.update {
+                        it.copy(
+                            studioSqlResult = res,
+                            studioIsLoading = false,
+                            studioStatusMessage = if (res.error != null) "Error: ${res.error}" else "OK (${res.durationMs}ms)"
+                        )
+                    }
+                }
+                "redis" -> {
+                    val res = studioManager.executeRedisCommand(_uiState.value.studioRedisCommandInput)
+                    _uiState.update {
+                        it.copy(
+                            studioRedisResult = res,
+                            studioIsLoading = false,
+                            studioStatusMessage = if (res.error != null) "Error: ${res.error}" else "OK (${res.durationMs}ms)"
+                        )
+                    }
+                }
+                "mongodb" -> {
+                    val res = studioManager.executeMongoQuery("app_dev", _uiState.value.studioMongoQueryInput)
+                    _uiState.update {
+                        it.copy(
+                            studioMongoResult = res,
+                            studioIsLoading = false,
+                            studioStatusMessage = if (res.error != null) "Error: ${res.error}" else "OK (${res.durationMs}ms)"
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    fun refreshStudioBrowserData() {
+        viewModelScope.launch {
+            val keys = studioManager.getRedisKeys("*")
+            val tables = studioManager.getMariaDbTables("app_dev")
+            val colls = studioManager.getMongoCollections("app_dev")
+            _uiState.update {
+                it.copy(
+                    studioRedisKeys = keys,
+                    studioSqlTables = tables,
+                    studioMongoCollections = colls
+                )
+            }
+        }
+    }
+
+    fun seedStudioData() {
+        _uiState.update { it.copy(studioIsLoading = true, studioStatusMessage = "Seeding full-stack developer test data...") }
+        viewModelScope.launch {
+            val result = studioManager.seedFullStackDemo()
+            refreshStudioBrowserData()
+            testStudioHealth()
+            _uiState.update {
+                it.copy(
+                    studioSeedResult = result,
+                    studioIsLoading = false,
+                    studioStatusMessage = result.message
+                )
+            }
+        }
+    }
+
+    fun purgeStudioData() {
+        _uiState.update { it.copy(studioIsLoading = true, studioStatusMessage = "Purging developer test data...") }
+        viewModelScope.launch {
+            val res = studioManager.purgeAllDemoData()
+            refreshStudioBrowserData()
+            testStudioHealth()
+            _uiState.update {
+                it.copy(
+                    studioIsLoading = false,
+                    studioStatusMessage = res.getOrDefault("Data purged successfully.")
+                )
+            }
+        }
+    }
+
+    fun testStudioHealth() {
+        viewModelScope.launch {
+            val map = studioManager.checkAllHealth()
+            _uiState.update { it.copy(studioHealthMap = map) }
+        }
+    }
+
+    fun runStudioBenchmark() {
+        _uiState.update { it.copy(studioIsLoading = true, studioStatusMessage = "Running performance benchmark...") }
+        viewModelScope.launch {
+            val bench = studioManager.runBenchmark()
+            _uiState.update {
+                it.copy(
+                    studioBenchmarkResult = bench,
+                    studioIsLoading = false,
+                    studioStatusMessage = "Benchmark completed!"
+                )
+            }
+        }
+    }
+
+    fun selectStudioRedisKey(key: String) {
+        setStudioEngine("redis")
+        setStudioRedisCommand("GET $key")
+        setStudioTab(StudioTab.QUERY)
+        executeStudioQuery()
+    }
+
+    fun deleteStudioRedisKey(key: String) {
+        viewModelScope.launch {
+            studioManager.executeRedisCommand("DEL $key")
+            refreshStudioBrowserData()
+        }
+    }
+
+    fun selectStudioSqlTable(table: String) {
+        setStudioEngine("mariadb")
+        setStudioSqlQuery("SELECT * FROM `$table` LIMIT 20;")
+        setStudioTab(StudioTab.QUERY)
+        executeStudioQuery()
+    }
+
+    fun selectStudioMongoCollection(coll: String) {
+        setStudioEngine("mongodb")
+        setStudioMongoQuery("find $coll")
+        setStudioTab(StudioTab.QUERY)
+        executeStudioQuery()
     }
 
     private fun appendLog(tag: String, message: String, isError: Boolean = false) {

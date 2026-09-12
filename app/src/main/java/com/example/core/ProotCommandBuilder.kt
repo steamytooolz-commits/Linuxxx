@@ -61,12 +61,16 @@ class ProotCommandBuilder(private val context: Context) {
         )
     }
 
-    private fun resolveShellPath(rootfsDir: File): String {
-        val binBash = File(rootfsDir, "bin/bash")
+    fun resolveShellPath(rootfsDir: File): String {
         val usrBinBash = File(rootfsDir, "usr/bin/bash")
+        val binBash = File(rootfsDir, "bin/bash")
+        val usrBinSh = File(rootfsDir, "usr/bin/sh")
+        val binSh = File(rootfsDir, "bin/sh")
         return when {
-            binBash.exists() && binBash.length() > 0 -> "/bin/bash"
             usrBinBash.exists() && usrBinBash.length() > 0 -> "/usr/bin/bash"
+            binBash.exists() && binBash.length() > 0 -> "/bin/bash"
+            usrBinSh.exists() && usrBinSh.length() > 0 -> "/usr/bin/sh"
+            binSh.exists() && binSh.length() > 0 -> "/bin/sh"
             else -> "/bin/bash"
         }
     }

@@ -89,9 +89,11 @@ class UbuntuRootfsManager(private val context: Context) {
             }
 
             // Step 2: Download rootfs archive if not extracted
+            extractor.flattenNestedRootfs(rootfsDir)
             val bashFile = File(rootfsDir, "bin/bash")
             val usrBashFile = File(rootfsDir, "usr/bin/bash")
-            if (!bashFile.exists() && !usrBashFile.exists()) {
+            val isBashReady = (bashFile.exists() && bashFile.length() > 0) || (usrBashFile.exists() && usrBashFile.length() > 0)
+            if (!isBashReady) {
                 val archiveFile = File(context.filesDir, "ubuntu-noble-arm64.tar.xz")
                 if (!archiveFile.exists() || archiveFile.length() < 1024 * 1024) {
                     _setupState.value = SetupStep.Downloading

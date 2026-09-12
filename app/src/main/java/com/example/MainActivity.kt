@@ -44,6 +44,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.ui.AppScreen
 import com.example.ui.MainUiState
 import com.example.ui.MainViewModel
+import com.example.ui.StudioTab
 import com.example.ui.components.AppBottomBar
 import com.example.ui.components.AppDrawerContent
 import com.example.ui.components.AppTopBar
@@ -51,6 +52,7 @@ import com.example.ui.screens.CodeMirrorEditorScreen
 import com.example.ui.screens.DaemonsScreen
 import com.example.ui.screens.SetupScreen
 import com.example.ui.screens.TerminalScreen
+import com.example.ui.screens.UniversalStudioScreen
 import com.example.ui.theme.MyApplicationTheme
 import kotlinx.coroutines.launch
 
@@ -123,7 +125,23 @@ class MainActivity : ComponentActivity() {
                         onRunScript = { code, lang -> viewModel.runPlaygroundScript(code, lang) },
                         onStopScript = { viewModel.stopPlaygroundScript() },
                         onUrlChange = { viewModel.setPreviewUrl(it) },
-                        onInstallPackage = { viewModel.installPackage(it) }
+                        onInstallPackage = { viewModel.installPackage(it) },
+                        onStudioTabSelected = { viewModel.setStudioTab(it) },
+                        onStudioEngineSelected = { viewModel.setStudioEngine(it) },
+                        onStudioSqlQueryChange = { viewModel.setStudioSqlQuery(it) },
+                        onStudioRedisCommandChange = { viewModel.setStudioRedisCommand(it) },
+                        onStudioMongoQueryChange = { viewModel.setStudioMongoQuery(it) },
+                        onStudioExecuteQuery = { viewModel.executeStudioQuery() },
+                        onStudioLanguageSelected = { viewModel.setStudioLanguage(it) },
+                        onStudioSeedDemoData = { viewModel.seedStudioData() },
+                        onStudioPurgeDemoData = { viewModel.purgeStudioData() },
+                        onStudioTestHealth = { viewModel.testStudioHealth() },
+                        onStudioRunBenchmark = { viewModel.runStudioBenchmark() },
+                        onStudioRefreshBrowser = { viewModel.refreshStudioBrowserData() },
+                        onStudioSelectRedisKey = { viewModel.selectStudioRedisKey(it) },
+                        onStudioDeleteRedisKey = { viewModel.deleteStudioRedisKey(it) },
+                        onStudioSelectSqlTable = { viewModel.selectStudioSqlTable(it) },
+                        onStudioSelectMongoCollection = { viewModel.selectStudioMongoCollection(it) }
                     )
                 }
             }
@@ -156,6 +174,22 @@ fun LinuxDashboardApp(
     onStopScript: () -> Unit = {},
     onUrlChange: (String) -> Unit = {},
     onInstallPackage: (String) -> Unit = {},
+    onStudioTabSelected: (StudioTab) -> Unit = {},
+    onStudioEngineSelected: (String) -> Unit = {},
+    onStudioSqlQueryChange: (String) -> Unit = {},
+    onStudioRedisCommandChange: (String) -> Unit = {},
+    onStudioMongoQueryChange: (String) -> Unit = {},
+    onStudioExecuteQuery: () -> Unit = {},
+    onStudioLanguageSelected: (String) -> Unit = {},
+    onStudioSeedDemoData: () -> Unit = {},
+    onStudioPurgeDemoData: () -> Unit = {},
+    onStudioTestHealth: () -> Unit = {},
+    onStudioRunBenchmark: () -> Unit = {},
+    onStudioRefreshBrowser: () -> Unit = {},
+    onStudioSelectRedisKey: (String) -> Unit = {},
+    onStudioDeleteRedisKey: (String) -> Unit = {},
+    onStudioSelectSqlTable: (String) -> Unit = {},
+    onStudioSelectMongoCollection: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
@@ -240,7 +274,23 @@ fun LinuxDashboardApp(
                                 onRunScript = onRunScript,
                                 onStopScript = onStopScript,
                                 onUrlChange = onUrlChange,
-                                onInstallPackage = onInstallPackage
+                                onInstallPackage = onInstallPackage,
+                                onStudioTabSelected = onStudioTabSelected,
+                                onStudioEngineSelected = onStudioEngineSelected,
+                                onStudioSqlQueryChange = onStudioSqlQueryChange,
+                                onStudioRedisCommandChange = onStudioRedisCommandChange,
+                                onStudioMongoQueryChange = onStudioMongoQueryChange,
+                                onStudioExecuteQuery = onStudioExecuteQuery,
+                                onStudioLanguageSelected = onStudioLanguageSelected,
+                                onStudioSeedDemoData = onStudioSeedDemoData,
+                                onStudioPurgeDemoData = onStudioPurgeDemoData,
+                                onStudioTestHealth = onStudioTestHealth,
+                                onStudioRunBenchmark = onStudioRunBenchmark,
+                                onStudioRefreshBrowser = onStudioRefreshBrowser,
+                                onStudioSelectRedisKey = onStudioSelectRedisKey,
+                                onStudioDeleteRedisKey = onStudioDeleteRedisKey,
+                                onStudioSelectSqlTable = onStudioSelectSqlTable,
+                                onStudioSelectMongoCollection = onStudioSelectMongoCollection
                             )
                         }
                     }
@@ -296,7 +346,23 @@ fun LinuxDashboardApp(
                             onRunScript = onRunScript,
                             onStopScript = onStopScript,
                             onUrlChange = onUrlChange,
-                            onInstallPackage = onInstallPackage
+                            onInstallPackage = onInstallPackage,
+                            onStudioTabSelected = onStudioTabSelected,
+                            onStudioEngineSelected = onStudioEngineSelected,
+                            onStudioSqlQueryChange = onStudioSqlQueryChange,
+                            onStudioRedisCommandChange = onStudioRedisCommandChange,
+                            onStudioMongoQueryChange = onStudioMongoQueryChange,
+                            onStudioExecuteQuery = onStudioExecuteQuery,
+                            onStudioLanguageSelected = onStudioLanguageSelected,
+                            onStudioSeedDemoData = onStudioSeedDemoData,
+                            onStudioPurgeDemoData = onStudioPurgeDemoData,
+                            onStudioTestHealth = onStudioTestHealth,
+                            onStudioRunBenchmark = onStudioRunBenchmark,
+                            onStudioRefreshBrowser = onStudioRefreshBrowser,
+                            onStudioSelectRedisKey = onStudioSelectRedisKey,
+                            onStudioDeleteRedisKey = onStudioDeleteRedisKey,
+                            onStudioSelectSqlTable = onStudioSelectSqlTable,
+                            onStudioSelectMongoCollection = onStudioSelectMongoCollection
                         )
                     }
                 }
@@ -328,7 +394,23 @@ private fun ScreenRouter(
     onRunScript: (code: String, lang: String) -> Unit,
     onStopScript: () -> Unit,
     onUrlChange: (String) -> Unit,
-    onInstallPackage: (String) -> Unit
+    onInstallPackage: (String) -> Unit,
+    onStudioTabSelected: (StudioTab) -> Unit = {},
+    onStudioEngineSelected: (String) -> Unit = {},
+    onStudioSqlQueryChange: (String) -> Unit = {},
+    onStudioRedisCommandChange: (String) -> Unit = {},
+    onStudioMongoQueryChange: (String) -> Unit = {},
+    onStudioExecuteQuery: () -> Unit = {},
+    onStudioLanguageSelected: (String) -> Unit = {},
+    onStudioSeedDemoData: () -> Unit = {},
+    onStudioPurgeDemoData: () -> Unit = {},
+    onStudioTestHealth: () -> Unit = {},
+    onStudioRunBenchmark: () -> Unit = {},
+    onStudioRefreshBrowser: () -> Unit = {},
+    onStudioSelectRedisKey: (String) -> Unit = {},
+    onStudioDeleteRedisKey: (String) -> Unit = {},
+    onStudioSelectSqlTable: (String) -> Unit = {},
+    onStudioSelectMongoCollection: (String) -> Unit = {}
 ) {
     AnimatedContent(
         targetState = uiState.currentScreen,
@@ -339,7 +421,29 @@ private fun ScreenRouter(
             AppScreen.SETUP -> {
                 SetupScreen(
                     uiState = uiState,
-                    onSetupCompleted = { onSelectScreen(AppScreen.CODEMIRROR) },
+                    onSetupCompleted = { onSelectScreen(AppScreen.STUDIO) },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+            AppScreen.STUDIO -> {
+                UniversalStudioScreen(
+                    uiState = uiState,
+                    onTabSelected = onStudioTabSelected,
+                    onEngineSelected = onStudioEngineSelected,
+                    onSqlQueryChange = onStudioSqlQueryChange,
+                    onRedisCommandChange = onStudioRedisCommandChange,
+                    onMongoQueryChange = onStudioMongoQueryChange,
+                    onExecuteQuery = onStudioExecuteQuery,
+                    onLanguageSelected = onStudioLanguageSelected,
+                    onSeedDemoData = onStudioSeedDemoData,
+                    onPurgeDemoData = onStudioPurgeDemoData,
+                    onTestHealth = onStudioTestHealth,
+                    onRunBenchmark = onStudioRunBenchmark,
+                    onRefreshBrowser = onStudioRefreshBrowser,
+                    onSelectRedisKey = onStudioSelectRedisKey,
+                    onDeleteRedisKey = onStudioDeleteRedisKey,
+                    onSelectSqlTable = onStudioSelectSqlTable,
+                    onSelectMongoCollection = onStudioSelectMongoCollection,
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -368,7 +472,6 @@ private fun ScreenRouter(
                     modifier = Modifier.fillMaxSize()
                 )
             }
-            else -> {}
         }
     }
 }

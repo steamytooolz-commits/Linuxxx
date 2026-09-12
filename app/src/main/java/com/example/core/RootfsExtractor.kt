@@ -63,6 +63,11 @@ class RootfsExtractor {
             }
 
             var extractedCount = 0
+            var rootPrefix: String? = null
+            val standardRootDirs = setOf(
+                "bin", "boot", "dev", "etc", "home", "lib", "lib64", "media",
+                "mnt", "opt", "proc", "root", "run", "sbin", "srv", "sys", "tmp", "usr", "var"
+            )
 
             FileInputStream(archiveFile).use { fis ->
                 BufferedInputStream(fis, 128 * 1024).use { bis ->
@@ -77,15 +82,46 @@ class RootfsExtractor {
                         val canonicalDest = destDir.canonicalPath
 
                         while (entry != null) {
-                            val entryName = entry.name.removePrefix("./")
+                            var entryName = entry.name.removePrefix("./")
+                            val rawName = entryName.trim('/')
+
+                            // Detect if archive has a top-level wrapper directory (e.g. ubuntu-noble-aarch64/)
+                            if (rootPrefix == null && rawName.isNotEmpty()) {
+                                val firstSlash = rawName.indexOf('/')
+                                if (firstSlash > 0) {
+                                    val topDir = rawName.substring(0, firstSlash)
+                                    val subPath = rawName.substring(firstSlash + 1).trim('/')
+                                    val subFirst = subPath.substringBefore('/')
+                                    if (topDir !in standardRootDirs && subFirst in standardRootDirs) {
+                                        rootPrefix = "$topDir/"
+                                        Log.i(tag, "Detected archive root wrapper prefix: $rootPrefix")
+                                    }
+                                } else if (entry.isDirectory && rawName !in standardRootDirs) {
+                                    rootPrefix = "$rawName/"
+                                    Log.i(tag, "Detected archive root wrapper directory: $rootPrefix")
+                                }
+                            }
+
+                            // If this entry is the wrapper directory itself, skip creating it
+                            if (rootPrefix != null && (entryName == rootPrefix || entryName == rootPrefix.removeSuffix("/"))) {
+                                entry = tarIn.nextEntry
+                                continue
+                            }
+
+                            // Strip wrapper directory prefix
+                            if (rootPrefix != null && entryName.startsWith(rootPrefix!!)) {
+                                entryName = entryName.removePrefix(rootPrefix!!)
+                            }
+
                             if (entryName.isNotEmpty() && entryName != ".") {
                                 val targetFile = File(destDir, entryName)
 
                                 // Guard against Zip Slip / path traversal
                                 val canonicalTarget = try { targetFile.canonicalFile } catch (e: Exception) { targetFile }
+                                val canonicalTargetPath = canonicalTarget.canonicalPath
 
-                                if (!canonicalTarget.canonicalPath.startsWith(canonicalDest) &&
-                                    !targetFile.absolutePath.startsWith(canonicalDest)) {
+                                if (!canonicalTargetPath.startsWith(canonicalDest + File.separator) &&
+                                    canonicalTargetPath != canonicalDest) {
                                     throw SecurityException("Illegal archive path traversal: ${entry.name}")
                                 }
 
@@ -97,11 +133,21 @@ class RootfsExtractor {
                                         canonicalTarget.parentFile?.mkdirs()
                                         targetFile.parentFile?.mkdirs()
                                         targetFile.delete()
-                                        createSymbolicLink(entry.linkName, targetFile)
+                                        val linkTarget = if (rootPrefix != null && entry.linkName.startsWith(rootPrefix!!)) {
+                                            entry.linkName.removePrefix(rootPrefix!!)
+                                        } else {
+                                            entry.linkName
+                                        }
+                                        createSymbolicLink(linkTarget, targetFile)
                                     } else if (entry.isLink) {
                                         canonicalTarget.parentFile?.mkdirs()
                                         targetFile.parentFile?.mkdirs()
-                                        val linkTargetFile = File(destDir, entry.linkName.removePrefix("./"))
+                                        val rawLinkName = if (rootPrefix != null && entry.linkName.startsWith(rootPrefix!!)) {
+                                            entry.linkName.removePrefix(rootPrefix!!)
+                                        } else {
+                                            entry.linkName
+                                        }
+                                        val linkTargetFile = File(destDir, rawLinkName.removePrefix("./"))
                                         createHardLink(linkTargetFile, targetFile)
                                     } else {
                                         canonicalTarget.parentFile?.mkdirs()
@@ -131,6 +177,9 @@ class RootfsExtractor {
                 }
             }
 
+            // Fallback: Check if rootfs files were extracted into a nested subdirectory and promote them
+            flattenNestedRootfs(destDir)
+
             // 1. Verify and repair /bin/bash
             val bash = File(destDir, "bin/bash")
             val usrBash = File(destDir, "usr/bin/bash")
@@ -146,14 +195,14 @@ class RootfsExtractor {
                         // Create parent dirs and a proper absolute symlink
                         bash.parentFile?.mkdirs()
                         val targetPath = usrBash.absolutePath
-                        Os.symlink(targetPath, bash.absolutePath)
+                        createSymbolicLink(targetPath, bash)
                         Log.i(tag, "Repaired /bin/bash -> $targetPath")
-                    } catch (e: Exception) {
+                    } catch (e: Throwable) {
                         // Fallback: copy the physical file instead of symlinking
                         Log.w(tag, "Symlink repair failed, falling back to copy: ${e.message}")
                         try {
                             usrBash.copyTo(bash, overwrite = true)
-                        } catch (copyEx: Exception) {
+                        } catch (copyEx: Throwable) {
                             Log.e(tag, "Failed copy fallback for bash: ${copyEx.message}")
                         }
                     }
@@ -173,13 +222,40 @@ class RootfsExtractor {
                 }
             }
 
+            // Case C: Fallback to /bin/sh or /usr/bin/sh if bash is missing
+            if ((!bash.exists() || bash.length() == 0L) && (!usrBash.exists() || usrBash.length() == 0L)) {
+                val sh = File(destDir, "bin/sh")
+                val usrSh = File(destDir, "usr/bin/sh")
+                val validSh = when {
+                    usrSh.exists() && usrSh.length() > 0 -> usrSh
+                    sh.exists() && sh.length() > 0 -> sh
+                    else -> null
+                }
+                if (validSh != null) {
+                    Log.i(tag, "Bash binary missing, bootstrapping from ${validSh.name}...")
+                    try {
+                        bash.parentFile?.mkdirs()
+                        validSh.copyTo(bash, overwrite = true)
+                        usrBash.parentFile?.mkdirs()
+                        validSh.copyTo(usrBash, overwrite = true)
+                    } catch (e: Exception) {
+                        Log.w(tag, "Failed to bootstrap bash from sh: ${e.message}")
+                    }
+                }
+            }
+
             // 2. Final validation
             val isBashValid = (bash.exists() && bash.length() > 0) || (usrBash.exists() && usrBash.length() > 0)
 
             if (isBashValid) {
-                // Ensure executable permissions on both
+                // Ensure executable permissions on all shell binaries
                 if (bash.exists()) bash.setExecutable(true, false)
                 if (usrBash.exists()) usrBash.setExecutable(true, false)
+                val sh = File(destDir, "bin/sh")
+                val usrSh = File(destDir, "usr/bin/sh")
+                if (sh.exists()) sh.setExecutable(true, false)
+                if (usrSh.exists()) usrSh.setExecutable(true, false)
+
                 onProgress(0.92f, "Rootfs extracted and verified (/bin/bash available)")
                 Result.success(Unit)
             } else {
@@ -191,29 +267,44 @@ class RootfsExtractor {
         }
     }
 
-    private fun createSymbolicLink(linkTarget: String, linkFile: File) {
+    fun createSymbolicLink(linkTarget: String, linkFile: File) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
+                java.nio.file.Files.createSymbolicLink(
+                    linkFile.toPath(),
+                    java.nio.file.Paths.get(linkTarget)
+                )
+                return
+            } catch (_: Throwable) {}
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             try {
                 Os.symlink(linkTarget, linkFile.absolutePath)
                 return
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 Log.d(tag, "Os.symlink failed for $linkTarget -> ${linkFile.name}: ${e.message}")
             }
         }
         try {
             Runtime.getRuntime().exec(arrayOf("ln", "-s", linkTarget, linkFile.absolutePath)).waitFor()
-        } catch (ignored: Exception) {}
+        } catch (_: Throwable) {}
     }
 
-    private fun createHardLink(srcFile: File, linkFile: File) {
+    fun createHardLink(srcFile: File, linkFile: File) {
         try {
             linkFile.parentFile?.mkdirs()
             linkFile.delete()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                try {
+                    java.nio.file.Files.createLink(linkFile.toPath(), srcFile.toPath())
+                    return
+                } catch (_: Throwable) {}
+            }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                 try {
                     Os.link(srcFile.absolutePath, linkFile.absolutePath)
                     return
-                } catch (e: Exception) {
+                } catch (e: Throwable) {
                     Log.w(tag, "Os.link failed for ${srcFile.name} -> ${linkFile.name}: ${e.message}")
                 }
             }
@@ -222,7 +313,7 @@ class RootfsExtractor {
             } else {
                 createSymbolicLink(srcFile.name, linkFile)
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.w(tag, "Failed to create hard link ${linkFile.name}: ${e.message}")
         }
     }
@@ -230,6 +321,66 @@ class RootfsExtractor {
     private fun applyPermissions(mode: Int, file: File) {
         if (mode and 0b001_000_000 != 0 || file.parentFile?.name == "bin" || file.parentFile?.name == "sbin") {
             file.setExecutable(true, false)
+        }
+    }
+
+    /**
+     * If the rootfs was extracted into a single nested wrapper folder, promote all contents
+     * to the destDir so PRoot can locate /bin, /usr, /etc at root.
+     */
+    fun flattenNestedRootfs(destDir: File) {
+        val topBash = File(destDir, "bin/bash")
+        val topUsrBash = File(destDir, "usr/bin/bash")
+        if ((topBash.exists() && topBash.length() > 0) || (topUsrBash.exists() && topUsrBash.length() > 0)) {
+            return
+        }
+
+        val subDirs = destDir.listFiles()?.filter { it.isDirectory } ?: return
+        for (sub in subDirs) {
+            val subBash = File(sub, "bin/bash")
+            val subUsrBash = File(sub, "usr/bin/bash")
+            val subSh = File(sub, "bin/sh")
+            val subUsrSh = File(sub, "usr/bin/sh")
+            val hasShell = (subBash.exists() && subBash.length() > 0) ||
+                    (subUsrBash.exists() && subUsrBash.length() > 0) ||
+                    (subSh.exists() && subSh.length() > 0) ||
+                    (subUsrSh.exists() && subUsrSh.length() > 0)
+
+            if (hasShell) {
+                Log.i(tag, "Found nested rootfs in ${sub.name}, promoting files to ${destDir.name}...")
+                moveDirectoryContents(sub, destDir)
+                sub.deleteRecursively()
+                break
+            }
+        }
+    }
+
+    private fun moveDirectoryContents(sourceDir: File, targetDir: File) {
+        val children = sourceDir.listFiles() ?: return
+        for (child in children) {
+            val dest = File(targetDir, child.name)
+            if (child.isDirectory) {
+                if (!dest.exists()) {
+                    if (!child.renameTo(dest)) {
+                        dest.mkdirs()
+                        moveDirectoryContents(child, dest)
+                        child.delete()
+                    }
+                } else {
+                    moveDirectoryContents(child, dest)
+                    child.delete()
+                }
+            } else {
+                dest.delete()
+                if (!child.renameTo(dest)) {
+                    try {
+                        child.copyTo(dest, overwrite = true)
+                        child.delete()
+                    } catch (e: Exception) {
+                        Log.w(tag, "Failed to move ${child.name} to ${dest.name}: ${e.message}")
+                    }
+                }
+            }
         }
     }
 }

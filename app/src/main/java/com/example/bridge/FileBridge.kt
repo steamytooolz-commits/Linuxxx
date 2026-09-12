@@ -2,19 +2,14 @@ package com.example.bridge
 
 import android.content.Context
 import android.webkit.JavascriptInterface
-import com.example.core.DatabaseSecurityManager
+import com.example.core.UniversalDatabaseStudioManager
 import com.google.gson.Gson
-import com.mongodb.client.MongoClients
-import org.bson.Document
-import redis.clients.jedis.Jedis
 import java.io.File
-import java.sql.DriverManager
 
 /**
  * Native JavaScript interface exposed to CodeMirror 6 inside the WebView.
- * Handles file management (read, write, list, delete) and direct query execution
- * against MariaDB (3306), Redis (6379), and MongoDB (27017).
- * Connects securely to MariaDB using the authenticated root password.
+ * Handles file management (read, write, list, delete) and delegates database operations
+ * to the centralized UniversalDatabaseStudioManager.
  */
 open class FileBridge(
     private val root: File,
@@ -23,6 +18,9 @@ open class FileBridge(
 ) {
 
     private val gson = Gson()
+    private val studioManager: UniversalDatabaseStudioManager? = context?.let {
+        UniversalDatabaseStudioManager(it.applicationContext)
+    }
 
     init {
         if (!root.exists()) {
@@ -91,12 +89,53 @@ open class FileBridge(
 
     @JavascriptInterface
     fun runQuery(type: String, query: String): String {
+        val manager = studioManager ?: return gson.toJson(mapOf("error" to "Database manager not initialized"))
         return try {
-            when (type.lowercase()) {
-                "mariadb", "mysql", "sql" -> executeMariaDbQuery(query)
-                "redis" -> executeRedisCommand(query)
-                "mongodb", "mongo" -> executeMongoQuery(query)
-                else -> gson.toJson(mapOf("error" to "Unsupported database type: $type"))
+            kotlinx.coroutines.runBlocking {
+                when (type.lowercase()) {
+                    "mariadb", "mysql", "sql" -> {
+                        val result = manager.executeSqlQuery(query)
+                        gson.toJson(
+                            mapOf(
+                                "status" to if (result.error == null) "success" else "error",
+                                "database" to "mariadb",
+                                "columns" to result.columns,
+                                "rowCount" to result.rows.size,
+                                "rows" to result.rows,
+                                "affectedRows" to result.affectedRows,
+                                "durationMs" to result.durationMs,
+                                "error" to result.error
+                            )
+                        )
+                    }
+                    "redis" -> {
+                        val result = manager.executeRedisCommand(query)
+                        gson.toJson(
+                            mapOf(
+                                "status" to if (result.error == null) "success" else "error",
+                                "database" to "redis",
+                                "command" to result.command,
+                                "output" to result.output,
+                                "durationMs" to result.durationMs,
+                                "error" to result.error
+                            )
+                        )
+                    }
+                    "mongodb", "mongo" -> {
+                        val result = manager.executeMongoQuery("app_dev", query)
+                        gson.toJson(
+                            mapOf(
+                                "status" to if (result.error == null) "success" else "error",
+                                "database" to "mongodb",
+                                "json" to result.outputJson,
+                                "docCount" to result.documentCount,
+                                "durationMs" to result.durationMs,
+                                "error" to result.error
+                            )
+                        )
+                    }
+                    else -> gson.toJson(mapOf("error" to "Unsupported database type: $type"))
+                }
             }
         } catch (e: Exception) {
             gson.toJson(
@@ -104,148 +143,6 @@ open class FileBridge(
                     "status" to "error",
                     "database" to type,
                     "error" to (e.message ?: e.toString())
-                )
-            )
-        }
-    }
-
-    private fun executeMariaDbQuery(query: String): String {
-        val password = if (context != null) {
-            DatabaseSecurityManager.getInstance(context).getOrCreateMariaDbPassword()
-        } else {
-            ""
-        }
-
-        if (password.isBlank()) {
-            return gson.toJson(
-                mapOf(
-                    "status" to "error",
-                    "database" to "mariadb",
-                    "error" to "Security error: MariaDB root password is empty or not initialized. Connection refused."
-                )
-            )
-        }
-
-        return try {
-            val url = "jdbc:mariadb://127.0.0.1:3306/?connectTimeout=3000&socketTimeout=5000"
-            val conn = DriverManager.getConnection(url, "root", password)
-
-            conn.use { c ->
-                c.createStatement().use { stmt ->
-                    val hasResultSet = stmt.execute(query)
-                    if (hasResultSet) {
-                        val rs = stmt.resultSet
-                        val meta = rs.metaData
-                        val colCount = meta.columnCount
-                        val columns = (1..colCount).map { meta.getColumnLabel(it) }
-                        val rows = mutableListOf<Map<String, Any?>>()
-                        while (rs.next()) {
-                            val row = mutableMapOf<String, Any?>()
-                            for (i in 1..colCount) {
-                                row[columns[i - 1]] = rs.getObject(i)
-                            }
-                            rows.add(row)
-                        }
-                        gson.toJson(
-                            mapOf(
-                                "status" to "success",
-                                "database" to "mariadb",
-                                "columns" to columns,
-                                "rowCount" to rows.size,
-                                "rows" to rows
-                            )
-                        )
-                    } else {
-                        gson.toJson(
-                            mapOf(
-                                "status" to "success",
-                                "database" to "mariadb",
-                                "affectedRows" to stmt.updateCount
-                            )
-                        )
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            gson.toJson(
-                mapOf(
-                    "status" to "error",
-                    "database" to "mariadb",
-                    "port" to 3306,
-                    "message" to (e.message ?: "Failed to connect to MariaDB on 127.0.0.1:3306")
-                )
-            )
-        }
-    }
-
-    private fun executeRedisCommand(query: String): String {
-        return try {
-            Jedis("127.0.0.1", 6379, 3000).use { jedis ->
-                val parts = query.trim().split("\\s+".toRegex())
-                if (parts.isEmpty()) return gson.toJson(mapOf("error" to "Empty command"))
-                val cmd = parts[0].uppercase()
-                val args = parts.drop(1).toTypedArray()
-                val result: Any? = when (cmd) {
-                    "PING" -> jedis.ping()
-                    "GET" -> if (args.isNotEmpty()) jedis.get(args[0]) else "ERR wrong number of arguments for GET"
-                    "SET" -> if (args.size >= 2) jedis.set(args[0], args[1]) else "ERR wrong number of arguments for SET"
-                    "KEYS" -> jedis.keys(if (args.isNotEmpty()) args[0] else "*").toList()
-                    "HGETALL" -> if (args.isNotEmpty()) jedis.hgetAll(args[0]) else "ERR wrong number of arguments for HGETALL"
-                    "DBSIZE" -> jedis.dbSize()
-                    "INFO" -> jedis.info(if (args.isNotEmpty()) args[0] else null)
-                    else -> "Command '$cmd' processed on 127.0.0.1:6379"
-                }
-                gson.toJson(
-                    mapOf(
-                        "status" to "success",
-                        "database" to "redis",
-                        "command" to cmd,
-                        "result" to result
-                    )
-                )
-            }
-        } catch (e: Exception) {
-            gson.toJson(
-                mapOf(
-                    "status" to "error",
-                    "database" to "redis",
-                    "port" to 6379,
-                    "message" to (e.message ?: "Failed to connect to Redis on 127.0.0.1:6379")
-                )
-            )
-        }
-    }
-
-    private fun executeMongoQuery(query: String): String {
-        return try {
-            MongoClients.create("mongodb://127.0.0.1:27017/?serverSelectionTimeoutMS=3000").use { client ->
-                val db = client.getDatabase("admin")
-                val clean = query.trim()
-                val commandDoc = if (clean.startsWith("{") && clean.endsWith("}")) {
-                    Document.parse(clean)
-                } else if (clean.contains("ping", ignoreCase = true)) {
-                    Document("ping", 1)
-                } else if (clean.contains("buildinfo", ignoreCase = true)) {
-                    Document("buildinfo", 1)
-                } else {
-                    Document("ping", 1)
-                }
-                val result = db.runCommand(commandDoc)
-                gson.toJson(
-                    mapOf(
-                        "status" to "success",
-                        "database" to "mongodb",
-                        "result" to Document.parse(result.toJson())
-                    )
-                )
-            }
-        } catch (e: Exception) {
-            gson.toJson(
-                mapOf(
-                    "status" to "error",
-                    "database" to "mongodb",
-                    "port" to 27017,
-                    "message" to (e.message ?: "Failed to connect to MongoDB on 127.0.0.1:27017")
                 )
             )
         }
