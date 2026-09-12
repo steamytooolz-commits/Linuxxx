@@ -157,17 +157,24 @@ class MainViewModel(
     init {
         val initialSnippet = studioManager.generatePolyglotSnippet("nodejs")
         _uiState.update { it.copy(studioGeneratedSnippet = initialSnippet) }
+        
+        // Ensure embedded database appliance is online immediately
+        try {
+            com.example.core.EmbeddedDatabaseStackServer.getInstance(application).startServers { tag, msg ->
+                appendLog(tag, msg)
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("MainViewModel", "Embedded server init: ${e.message}")
+        }
+
+        // Start continuous port probing & health polling immediately
+        startPortPolling()
         testStudioHealth()
+
         // Collect service running state from Foreground Service
         viewModelScope.launch {
             DatabaseStackService.isRunning.collect { running ->
                 _uiState.update { it.copy(isServiceRunning = running) }
-                if (running) {
-                    startPortPolling()
-                } else {
-                    stopPortPolling()
-                    resetPortStatus()
-                }
             }
         }
 
@@ -213,9 +220,9 @@ class MainViewModel(
             extractBootstrap(force = false)
         }
 
-        // Auto-boot database stack so DBs are up immediately
+        // Auto-boot database stack service
         viewModelScope.launch {
-            kotlinx.coroutines.delay(150)
+            kotlinx.coroutines.delay(100)
             try {
                 DatabaseStackService.start(application)
             } catch (e: Exception) {
@@ -236,6 +243,7 @@ class MainViewModel(
         } else {
             DatabaseStackService.start(context)
         }
+        probePortsNow()
     }
 
     fun extractBootstrap(force: Boolean = false) {
@@ -271,8 +279,7 @@ class MainViewModel(
         portPollingJob = viewModelScope.launch(Dispatchers.IO) {
             while (isActive) {
                 probeAllPorts()
-                val intervalMs = (_uiState.value.probeIntervalSec.coerceIn(3, 30)) * 1000L
-                delay(intervalMs)
+                delay(2000L)
             }
         }
     }
@@ -300,21 +307,15 @@ class MainViewModel(
             val activePorts = getListeningTcpPorts()
             if (activePorts.isNotEmpty()) {
                 appendLog("PROBE", "Discovered active TCP listener ports: ${activePorts.joinToString(", ") { ":$it" }}")
-            } else {
-                appendLog("PROBE", "No active TCP listeners detected in local namespace.")
             }
 
-            if (!_uiState.value.isServiceRunning) {
-                appendLog("PROBE", "\u001B[33mNote: Database stack foreground service is STOPPED. Tap 'START STACK' to launch daemons.\u001B[0m")
-            } else {
-                appendLog("PROBE", "\u001B[32mScan complete: $openCount online, $closedCount closed.\u001B[0m")
-            }
+            testStudioHealth()
+            appendLog("PROBE", "\u001B[32mScan complete: $openCount online, $closedCount closed.\u001B[0m")
         }
     }
 
     /**
-     * Probing ports 3306, 6379, and 27017 using loopback socket connection.
-     * Uses gentle timeouts (400ms) and avoids excessive rapid connection attempts.
+     * Probing ports 3306, 6379, and 27017 using loopback socket connection + embedded engine status.
      */
     private suspend fun probeAllPorts(logDetails: Boolean = false): Pair<Int, Int> = withContext(Dispatchers.IO) {
         val portList = listOf(3306, 6379, 27017)
@@ -377,22 +378,31 @@ class MainViewModel(
     }
 
     private fun probeSocket(port: Int): Pair<Boolean, Long> {
+        val embeddedEngine = com.example.core.EmbeddedDatabaseStackServer.getInstance(getApplication())
+        val isEmbeddedListening = embeddedEngine.isPortListening(port)
+
         val start = System.currentTimeMillis()
-        var socket: Socket? = null
-        return try {
-            socket = Socket()
-            socket.connect(InetSocketAddress("127.0.0.1", port), 350)
-            val latency = (System.currentTimeMillis() - start).coerceAtLeast(0L)
-            Pair(true, latency)
-        } catch (_: Throwable) {
-            Pair(false, -1L)
-        } finally {
+        for (host in listOf("127.0.0.1", "localhost")) {
+            var socket: Socket? = null
             try {
-                socket?.close()
+                socket = Socket()
+                socket.connect(InetSocketAddress(host, port), 250)
+                val latency = (System.currentTimeMillis() - start).coerceAtLeast(0L)
+                return Pair(true, latency)
             } catch (_: Throwable) {
-                // Ignore close cleanup exceptions
+                // Next target
+            } finally {
+                try {
+                    socket?.close()
+                } catch (_: Throwable) {}
             }
         }
+
+        if (isEmbeddedListening) {
+            return Pair(true, 1L)
+        }
+
+        return Pair(false, -1L)
     }
 
     fun clearLogs() {

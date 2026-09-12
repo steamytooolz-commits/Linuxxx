@@ -78,6 +78,10 @@ fun DaemonsScreen(
     val dbSecurity = remember { DatabaseSecurityManager.getInstance(context) }
     val mariaDbPassword = remember { dbSecurity.getOrCreateMariaDbPassword() }
 
+    LaunchedEffect(Unit) {
+        onProbePorts()
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()

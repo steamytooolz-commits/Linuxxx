@@ -263,14 +263,17 @@ class DatabaseStackService : Service() {
     }
 
     private fun isPortListening(host: String, port: Int): Boolean {
-        return try {
-            Socket().use { socket ->
-                socket.connect(InetSocketAddress(host, port), 400)
-                true
+        for (targetHost in listOf(host, "127.0.0.1", "localhost")) {
+            try {
+                Socket().use { socket ->
+                    socket.connect(InetSocketAddress(targetHost, port), 500)
+                    return true
+                }
+            } catch (_: Exception) {
+                // Continue loop
             }
-        } catch (_: Exception) {
-            false
         }
+        return false
     }
 
     private fun emitLog(tag: String, text: String, isError: Boolean) {

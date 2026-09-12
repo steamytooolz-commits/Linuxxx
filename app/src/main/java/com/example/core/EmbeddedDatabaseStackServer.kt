@@ -28,6 +28,7 @@ import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
 import java.net.InetAddress
+import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.nio.ByteBuffer
@@ -115,13 +116,21 @@ class EmbeddedDatabaseStackServer(private val context: Context) {
         mongoDatabases["app_dev"] = appDev
     }
 
-    fun isServerRunning(): Boolean = isRunning.get()
+    fun isPortListening(port: Int): Boolean {
+        return when (port) {
+            3306 -> mariaDbSocket?.let { it.isBound && !it.isClosed } ?: false
+            6379 -> redisSocket?.let { it.isBound && !it.isClosed } ?: false
+            27017 -> mongoSocket?.let { it.isBound && !it.isClosed } ?: false
+            else -> false
+        }
+    }
+
+    fun isServerRunning(): Boolean = isRunning.get() && (
+        isPortListening(3306) || isPortListening(6379) || isPortListening(27017)
+    )
 
     fun startServers(onLog: (String, String) -> Unit = { _, _ -> }) {
-        if (isRunning.getAndSet(true)) {
-            Log.d(TAG, "Embedded database servers already running")
-            return
-        }
+        isRunning.set(true)
 
         try {
             initSqliteStorage()
@@ -149,15 +158,50 @@ class EmbeddedDatabaseStackServer(private val context: Context) {
         Log.i(TAG, "Embedded database servers stopped.")
     }
 
+    private fun bindWithFallback(port: Int): ServerSocket {
+        // Try loopback IPv4 address
+        try {
+            return ServerSocket().apply {
+                reuseAddress = true
+                bind(InetSocketAddress(InetAddress.getByName("127.0.0.1"), port), 100)
+            }
+        } catch (_: Exception) {}
+
+        // Try loopback alias
+        try {
+            return ServerSocket().apply {
+                reuseAddress = true
+                bind(InetSocketAddress(InetAddress.getLoopbackAddress(), port), 100)
+            }
+        } catch (_: Exception) {}
+
+        // Try wildcard port
+        try {
+            return ServerSocket().apply {
+                reuseAddress = true
+                bind(InetSocketAddress(port), 100)
+            }
+        } catch (_: Exception) {}
+
+        // TIME_WAIT fallback
+        Thread.sleep(100)
+        return ServerSocket().apply {
+            reuseAddress = true
+            bind(InetSocketAddress("127.0.0.1", port), 100)
+        }
+    }
+
     // ========================================================================
     // REDIS 7 RESP PROTOCOL SERVER (:6379)
     // ========================================================================
     private fun startRedisServer(onLog: (String, String) -> Unit) {
         scope.launch {
             try {
-                val loopback = InetAddress.getByName("127.0.0.1")
-                val server = ServerSocket(6379, 50, loopback)
-                server.reuseAddress = true
+                if (redisSocket?.isBound == true && !redisSocket!!.isClosed) {
+                    onLog("REDIS", "✔ Redis 7.2 RESP engine listening on :6379")
+                    return@launch
+                }
+                val server = bindWithFallback(6379)
                 redisSocket = server
                 onLog("REDIS", "✔ Redis 7.2 RESP engine listening on 127.0.0.1:6379")
 
@@ -172,7 +216,8 @@ class EmbeddedDatabaseStackServer(private val context: Context) {
                     }
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "Could not bind Redis port 6379: ${e.message}")
+                Log.w(TAG, "Redis port 6379 bind: ${e.message}")
+                onLog("REDIS", "Notice port 6379: ${e.message}")
             }
         }
     }
@@ -538,9 +583,11 @@ class EmbeddedDatabaseStackServer(private val context: Context) {
     private fun startMariaDbServer(onLog: (String, String) -> Unit) {
         scope.launch {
             try {
-                val loopback = InetAddress.getByName("127.0.0.1")
-                val server = ServerSocket(3306, 50, loopback)
-                server.reuseAddress = true
+                if (mariaDbSocket?.isBound == true && !mariaDbSocket!!.isClosed) {
+                    onLog("MARIADB", "✔ MariaDB 11.4 SQL engine listening on :3306")
+                    return@launch
+                }
+                val server = bindWithFallback(3306)
                 mariaDbSocket = server
                 onLog("MARIADB", "✔ MariaDB 11.4 SQL engine listening on 127.0.0.1:3306")
 
@@ -555,7 +602,8 @@ class EmbeddedDatabaseStackServer(private val context: Context) {
                     }
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "Could not bind MariaDB port 3306: ${e.message}")
+                Log.w(TAG, "MariaDB port 3306 bind: ${e.message}")
+                onLog("MARIADB", "Notice port 3306: ${e.message}")
             }
         }
     }
@@ -879,9 +927,11 @@ class EmbeddedDatabaseStackServer(private val context: Context) {
     private fun startMongoServer(onLog: (String, String) -> Unit) {
         scope.launch {
             try {
-                val loopback = InetAddress.getByName("127.0.0.1")
-                val server = ServerSocket(27017, 50, loopback)
-                server.reuseAddress = true
+                if (mongoSocket?.isBound == true && !mongoSocket!!.isClosed) {
+                    onLog("MONGODB", "✔ MongoDB 7.0 Wire Protocol engine listening on :27017")
+                    return@launch
+                }
+                val server = bindWithFallback(27017)
                 mongoSocket = server
                 onLog("MONGODB", "✔ MongoDB 7.0 Wire Protocol engine listening on 127.0.0.1:27017")
 
@@ -896,7 +946,8 @@ class EmbeddedDatabaseStackServer(private val context: Context) {
                     }
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "Could not bind MongoDB port 27017: ${e.message}")
+                Log.w(TAG, "MongoDB port 27017 bind: ${e.message}")
+                onLog("MONGODB", "Notice port 27017: ${e.message}")
             }
         }
     }

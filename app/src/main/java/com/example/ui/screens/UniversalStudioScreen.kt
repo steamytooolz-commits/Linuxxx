@@ -106,6 +106,11 @@ fun UniversalStudioScreen(
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
 
+    LaunchedEffect(Unit) {
+        onTestHealth()
+        onRefreshBrowser()
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
